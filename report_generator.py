@@ -12,31 +12,24 @@ Professional Report Generator
 
 import os
 import io
-import math
-import base64
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
-from pathlib import Path
-from dataclasses import asdict
+from typing import List, Dict, Tuple
 
-import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.io as pio
 
 # PPTX imports
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-from pptx.enum.shapes import MSO_SHAPE, MSO_CONNECTOR
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.dml.color import RGBColor
-from pptx.oxml.ns import nsmap
-from pptx.oxml import parse_xml
 
 # PDF generation
 try:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch, mm
     from reportlab.platypus import (

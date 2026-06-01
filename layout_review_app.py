@@ -20,12 +20,7 @@ import sys
 from dash import Dash
 
 # Application imports
-from config_system import get_sram_7nm_config
-from review_engine import ProfessionalLayoutReviewEngine
-from report_generator import generate_reports
-
-from app.state import app_state
-from app.theme import THEME, INJECTED_CSS, FULL_CSS
+from app.theme import FULL_CSS
 from app.layout import create_layout
 from app.callbacks import register_callbacks
 
