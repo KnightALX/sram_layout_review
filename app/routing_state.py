@@ -14,7 +14,9 @@ class RoutingState:
     """State for the Configuration + Layout Review tabs (routing-focused)."""
     # Current preset
     current_preset: str = "sram_7nm_wl"
-    thresholds: RoutingThresholds = field(default_factory=RoutingThresholds.for_preset)
+    thresholds: RoutingThresholds = field(
+        default_factory=lambda: RoutingThresholds.for_preset("sram_7nm_wl")
+    )
     # Custom overrides (None means use preset)
     custom_thresholds: Optional[RoutingThresholds] = None
 
