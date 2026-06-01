@@ -27,12 +27,12 @@ class ThresholdField:
 # Built-in presets (used when no YAML is found)
 _BUILTIN_PRESETS: Dict[str, Dict[str, Any]] = {
     "sram_7nm_wl": {
-        "net_class": "wl", "max_h_ratio": 0.15, "max_v_ratio": 0.95,
+        "net_class": "wl", "max_h_ratio": 0.15, "max_v_ratio": 1.0,
         "max_r_ohm": 100.0, "max_c_ff": 500.0, "max_tau_ps": 12.5,
         "min_via_coverage": 0.85, "min_similarity": 80.0,
     },
     "sram_5nm_io_bl": {
-        "net_class": "io", "max_h_ratio": 0.95, "max_v_ratio": 0.10,
+        "net_class": "io", "max_h_ratio": 1.0, "max_v_ratio": 0.10,
         "max_r_ohm": 80.0, "max_c_ff": 400.0, "max_tau_ps": 10.0,
         "min_via_coverage": 0.90, "min_similarity": 80.0,
     },

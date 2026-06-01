@@ -1,7 +1,7 @@
 # 5nm FinFET SRAM — Bitline-dominant preset
 # Use for: BL/BLB signal nets (expect V-dominant routing down columns)
 net_class: io
-max_h_ratio: 0.95
+max_h_ratio: 1.0    # BL: H length allowed up to 100% (fully H-dominant routing)
 max_v_ratio: 0.10   # BL: V length ≤ 10% of total (most should be H across cells)
 max_r_ohm: 80.0
 max_c_ff: 400.0

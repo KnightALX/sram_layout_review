@@ -2,7 +2,7 @@
 # Use for: WL signal nets (expect H-dominant routing)
 net_class: wl
 max_h_ratio: 0.15   # WL: H length ≤ 15% of total (most should be V to reach cells)
-max_v_ratio: 0.95
+max_v_ratio: 1.0    # WL: V length allowed up to 100% (fully V-dominant routing)
 max_r_ohm: 100.0
 max_c_ff: 500.0
 max_tau_ps: 12.5
