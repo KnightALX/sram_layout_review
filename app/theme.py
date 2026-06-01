@@ -1488,6 +1488,310 @@ body {
 .empty-state .description {
     font-size: 12px;
 }
+
+/* ======================================================================
+   P0: Card polish — EDA panel feel (denser padding, lifted shadow, top accent)
+   ====================================================================== */
+.card {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.card-header {
+    /* Inset top accent line — Cadence-style panel header */
+    box-shadow: inset 0 1px 0 var(--accent-primary);
+    padding: 7px 12px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    background: linear-gradient(180deg, var(--bg-tertiary) 0%, rgba(0, 0, 0, 0.08) 100%);
+}
+
+.card-body {
+    padding: 12px;
+}
+
+/* ======================================================================
+   P0: Metric cards (KPI tiles) — gradient + accent left border, KPI layout
+   ====================================================================== */
+.metric-card {
+    background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-input) 100%) !important;
+    border: 1px solid var(--border-primary) !important;
+    border-left: 3px solid var(--accent-primary) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.15);
+    padding: 10px 12px !important;
+    min-width: 120px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.15s;
+}
+
+.metric-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 4px 10px rgba(59, 130, 246, 0.18);
+    border-color: var(--accent-primary) !important;
+}
+
+.metric-card .metric-label {
+    display: block;
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.metric-card .metric-value {
+    display: block;
+    font-family: var(--font-data);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+}
+
+.metric-card.pass {
+    border-left-color: var(--status-pass) !important;
+}
+
+.metric-card.fail {
+    border-left-color: var(--status-fail) !important;
+}
+
+.metric-card.pass .metric-value { color: var(--status-pass); }
+.metric-card.fail .metric-value { color: var(--status-fail); }
+
+/* ======================================================================
+   P1: Buttons — focus ring, press feedback, disabled state, block height
+   ====================================================================== */
+.btn {
+    transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.08s, box-shadow 0.15s;
+}
+
+.btn:focus-visible {
+    outline: 3px solid var(--accent-primary);
+    outline-offset: 2px;
+}
+
+.btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-block {
+    min-height: 36px;
+    font-weight: 600;
+}
+
+/* ======================================================================
+   P1: Tabs — accent underline on active (dcc.Tabs uses .tab / .tab--selected)
+   ====================================================================== */
+.eda-tabs .tab {
+    padding: 8px 14px !important;
+    border-bottom: 2px solid transparent !important;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.eda-tabs .tab:hover {
+    color: var(--text-primary) !important;
+    background: var(--bg-hover) !important;
+}
+
+.eda-tabs .tab--selected {
+    color: var(--text-accent) !important;
+    border-bottom-color: var(--accent-primary) !important;
+    background: var(--bg-tertiary) !important;
+}
+
+/* Panel tabs refinement */
+.panel-tab {
+    padding: 0 14px;
+    height: 30px;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.panel-tab.active {
+    background: var(--bg-hover);
+    font-weight: 600;
+}
+
+/* ======================================================================
+   P1: Status pills / count chips
+   ====================================================================== */
+.status-dot {
+    transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.status-dot.online {
+    background: var(--status-pass);
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.55);
+    animation: pulse-online 2.2s ease-in-out infinite;
+}
+
+@keyframes pulse-online {
+    0%, 100% {
+        box-shadow: 0 0 4px rgba(34, 197, 94, 0.55);
+        transform: scale(1);
+    }
+    50% {
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.95);
+        transform: scale(1.18);
+    }
+}
+
+.panel-tab .count {
+    display: inline-block;
+    min-width: 20px;
+    text-align: center;
+    padding: 1px 7px;
+    margin-left: 6px;
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 9px;
+    line-height: 1.4;
+}
+
+.panel-tab .count.error {
+    background: rgba(239, 68, 68, 0.18);
+    color: var(--status-fail);
+    border-color: rgba(239, 68, 68, 0.45);
+}
+
+.panel-tab .count.warning {
+    background: rgba(245, 158, 11, 0.18);
+    color: var(--status-warning);
+    border-color: rgba(245, 158, 11, 0.45);
+}
+
+/* ======================================================================
+   P2: Data table polish (dash_table.DataTable)
+   ====================================================================== */
+.dash-spreadsheet-container .dash-spreadsheet-inner table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner th,
+.dash-spreadsheet-container .dash-spreadsheet-inner td {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    font-family: var(--font-data) !important;
+    border-color: var(--border-secondary) !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner th {
+    background: var(--bg-tertiary) !important;
+    border-bottom: 1px solid var(--border-primary) !important;
+    text-transform: uppercase;
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary) !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td {
+    background: var(--bg-hover) !important;
+}
+
+/* Pill-style Pass cells (rgba set inline by style_data_conditional) get
+   the !important hover override. No row-tint / data-bar overlay needed
+   since both were removed from the per-net table — the pill carries the
+   full pass/fail signal on its own. */
+
+/* ======================================================================
+   P2: Header bar — subtle gradient + accent line
+   ====================================================================== */
+.header-bar {
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, rgba(0, 0, 0, 0.12) 100%);
+    box-shadow: inset 0 -1px 0 rgba(59, 130, 246, 0.22);
+    border-bottom: 1px solid var(--border-primary);
+}
+
+.header-status {
+    gap: var(--space-sm);
+}
+
+/* ======================================================================
+   P2: Sidebar — left accent rail + hover feedback
+   ====================================================================== */
+.sidebar-section,
+.sidebar-section-fixed,
+.sidebar-section-grow {
+    position: relative;
+    transition: background 0.15s;
+}
+
+.sidebar-section:hover,
+.sidebar-section-fixed:hover,
+.sidebar-section-grow:hover {
+    background: rgba(59, 130, 246, 0.04);
+}
+
+.sidebar-section::before,
+.sidebar-section-fixed::before,
+.sidebar-section-grow::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent-primary);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.sidebar-section:hover::before,
+.sidebar-section-fixed:hover::before,
+.sidebar-section-grow:hover::before {
+    opacity: 0.5;
+}
+
+/* ======================================================================
+   P3: Form inputs — focus ring + hover state
+   ====================================================================== */
+.input-field {
+    transition: border-color 0.15s, box-shadow 0.15s, background-color 0.3s;
+}
+
+.input-field:hover:not(:focus):not(:disabled) {
+    border-color: var(--accent-primary);
+}
+
+.input-field:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.22);
+}
+
+.form-label {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+/* ======================================================================
+   P3: Scrollbar — brighter hover thumb
+   ====================================================================== */
+::-webkit-scrollbar-thumb {
+    background: var(--border-primary);
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-primary);
+}
 """
 
 # Keep FULL_CSS for compatibility
