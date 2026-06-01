@@ -1,0 +1,9 @@
+# Generic analog layout — balanced
+net_class: analog
+max_h_ratio: 0.60
+max_v_ratio: 0.60
+max_r_ohm: 200.0
+max_c_ff: 1000.0
+max_tau_ps: 25.0
+min_via_coverage: 0.70
+min_similarity: 70.0

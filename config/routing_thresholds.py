@@ -98,13 +98,11 @@ class RoutingThresholds:
             v = getattr(self, name)
             if v <= 0:
                 raise ValueError(f"{name} must be positive: {v}")
-        # Ensure the dominant direction has at least 50% slack above the gate.
-        # Bug fix vs plan: original `< 0.5` did not reject the 0.30+0.30 test
-        # case (sum=0.60). Using `> 0.5` so that the test_validate_rejects_inverted_ratios
-        # test (sum=0.60) raises as expected.
-        if self.max_h_ratio + self.max_v_ratio > 0.5:
+        # Ensure at least one direction is allowed to dominate (sum ≥ 1.0).
+        # If sum < 1.0, no net can be 100% in any direction without failing one gate.
+        if self.max_h_ratio + self.max_v_ratio < 1.0:
             raise ValueError(
-                f"sum of max ratios ({self.max_h_ratio}+{self.max_v_ratio}) > 0.5, "
+                f"sum of max ratios ({self.max_h_ratio}+{self.max_v_ratio}) < 1.0, "
                 "no direction can dominate"
             )
 
