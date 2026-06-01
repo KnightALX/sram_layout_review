@@ -1,0 +1,16 @@
+Net_Shapes 20000
+; Test: Parallel lines - high coupling capacitance
+; Two M2 wires running parallel to trigger coupling cap warnings
+; M2 minWidth = 0.020um = 400 units
+M2
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+100000 106000
+1100000 106000
+1100000 100000
+p 2 4
+100000 106400
+100000 112400
+1100000 112400
+1100000 106400

@@ -1,0 +1,17 @@
+Net_Shapes 20000
+; Test: Missing via - adjacent metal layers M1 and M2 overlap without via
+; Triggers DRC003
+M1
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+100000 104000
+120000 104000
+120000 100000
+M2
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+100000 104000
+120000 104000
+120000 100000

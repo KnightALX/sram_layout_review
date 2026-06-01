@@ -1,0 +1,40 @@
+# ============================================================================
+# Layout Review Tool - YAML 批量导入配置文件示例
+# ============================================================================
+
+# 导入模式
+import_mode: "batch"
+
+# 全局选项
+options:
+  auto_prefix: ""           # 自动为 net 名称添加前缀（可选）
+  clear_existing: true     # 是否清空已有数据
+
+# Shape 文件列表
+# 支持两种格式：
+# 1. 字符串格式：仅指定文件路径，net 名称从文件名自动提取
+# 2. 对象格式：指定文件路径和自定义 net 名称
+
+shapes:
+  # 方式 1: 仅文件路径，net 名称从 shapes_<name>.txt 自动提取
+  # - /Users/niexinkai/Downloads/shapes_20000_net1.txt
+  # - /Users/niexinkai/Downloads/shapes_20001_net2.txt
+
+  # 方式 2: 指定自定义 net 名称
+  # - file: "/Users/niexinkai/Downloads/shapes_20000_net1.txt"
+  #   net_name: "VDD"
+  # - file: "/Users/niexinkai/Downloads/shapes_20001_net2.txt"
+  #   net_name: "VSS"
+  # - file: "/Users/niexinkai/Downloads/shapes_20002_net3.txt"
+  #   net_name: "CLK"
+
+  # 方式 3: 混合使用
+  - file: "D:/workspace/project/svdb_shape_plot-main/sram_layout_review/tests/shapes_test_wordline_WL0.txt"
+    net_name: "DEMO_NET"
+
+# 使用说明：
+# 1. 修改上面的文件路径为你的 shape 文件实际路径
+# 2. 可以使用 ~ 表示用户主目录（如 ~/Downloads/shapes_xxx.txt）
+# 3. 相对路径是相对于运行程序的目录
+# 4. 如果文件不存在，会显示警告但继续导入其他文件
+# 5. 支持 clear_existing: true 清空已有数据后重新导入

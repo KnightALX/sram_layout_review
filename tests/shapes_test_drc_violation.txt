@@ -1,0 +1,15 @@
+Net_Shapes 20000
+; Test: DRC violation - width below minimum (M1 min=0.034um = 680 units @ 20000 scale)
+; This shape has width 0.020um which is VIOLATION
+met1
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+140000 100000
+140000 104000
+100000 104000
+p 2 4
+200000 200000
+220000 200000
+220000 202000
+200000 202000

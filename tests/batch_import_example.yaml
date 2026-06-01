@@ -1,0 +1,49 @@
+# YAML Batch Import Configuration
+# ================================
+# This file demonstrates how to batch import multiple shape files
+# and optionally rename the nets.
+#
+# Usage:
+# 1. Upload this YAML file via the "Upload YAML Config" button
+# 2. The referenced shape files will be automatically imported
+#
+# File paths can be absolute or relative to the YAML file location
+
+import_mode: "batch"
+
+# Shape files to import
+shapes:
+  # Simple format: just file path
+  # - "/path/to/shapes_20000_net1.txt"
+
+  # Full format: file path + custom net name
+  - file: "shapes_test_bitline_BL0.txt"
+    net_name: "BL_0"
+
+  - file: "shapes_test_bitline_BLB0.txt"
+    net_name: "BLB_0"
+
+  - file: "shapes_test_wordline_WL0.txt"
+    net_name: "WL_0"
+
+  - file: "shapes_test_wordline_WL1.txt"
+    net_name: "WL_1"
+
+  - file: "shapes_test_power_net.txt"
+    net_name: "VDD"
+
+# Import options
+options:
+  # Prefix to add to all net names (optional)
+  # auto_prefix: "batch_"
+
+  # Clear existing data before import (optional, default: false)
+  # clear_existing: false
+
+  # Skip files that don't exist instead of erroring (optional, default: true)
+  # skip_missing: true
+
+# Error handling notes:
+# - If a file is not found, it will be skipped and reported in the status message
+# - If YAML parsing fails, an error message will be shown
+# - If PyYAML is not installed, you will be prompted to install it

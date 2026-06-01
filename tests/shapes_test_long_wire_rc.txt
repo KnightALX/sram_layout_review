@@ -1,0 +1,11 @@
+Net_Shapes 20000
+; Test: Long wire RC - exceeds 100um threshold on M1
+; M1 minWidth = 0.034um = 680 units
+; Long straight wire > 100um to trigger SI001
+M1
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+3100000 100000
+3100000 100680
+100000 100680

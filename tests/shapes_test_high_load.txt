@@ -1,0 +1,11 @@
+Net_Shapes 20000
+; Test: High load - large area polygons creating high capacitance
+; Triggers SI003 (max capacitance > 500fF)
+; M3 large rectangle
+M3
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+100000 1010000
+2000000 1010000
+2000000 100000

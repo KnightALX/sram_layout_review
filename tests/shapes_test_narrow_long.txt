@@ -1,0 +1,11 @@
+Net_Shapes 20000
+; Test: Narrow long wire - high aspect ratio (SRAM004/QTY004)
+; Wire > 100um long but < 0.05um wide
+; M1 minWidth = 0.034um, narrow = ~0.02um = 400 units
+M1
+1 1 0 Jan 11 15:44:09 2026
+p 1 4
+100000 100000
+100000 100400
+3100000 100400
+3100000 100000
