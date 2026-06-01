@@ -1,16 +1,12 @@
 """Dash application callbacks for interactivity."""
 
 import base64
-import json
 import os
 import re
-from datetime import datetime
-from typing import List
 
-from dash import Dash, dcc, html, Input, Output, State, dash_table, callback_context
+from dash import Dash, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from app.state import app_state
 from core.data_parsing import parse_shape_txt, import_shape_from_file
@@ -478,130 +474,6 @@ def register_callbacks(app: Dash):
     # =========================================================================
     # Configuration Tab Callbacks
     # =========================================================================
-
-    @app.callback(
-        [Output('current-config-info', 'children'),
-         Output('tech-node', 'value'),
-         Output('tech-voltage', 'value'),
-         Output('tech-temp', 'value'),
-         Output('total-rules', 'value'),
-         Output('rules-table-container', 'children')],
-        [Input('preset-selector', 'value'),
-         Input('preset-selector-config', 'value'),
-         Input('btn-refresh-rules', 'n_clicks')]
-    )
-    def update_config(preset, preset_config, refresh_clicks):
-        """Update configuration panel when preset changes or refresh is clicked."""
-        ctx = callback_context
-        if not ctx.triggered:
-            trigger_id = None
-        else:
-            trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-        is_refresh = trigger_id == 'btn-refresh-rules'
-
-        # Use whichever preset selector was triggered
-        active_preset = preset if trigger_id == 'preset-selector' else preset_config
-        if not active_preset:
-            active_preset = preset
-
-        if not is_refresh and active_preset:
-            user_rules = app_state.config.check_rules.copy() if app_state.config else []
-
-            if active_preset == 'sram_7nm':
-                from config_system import get_sram_7nm_config
-                new_config = get_sram_7nm_config()
-            elif active_preset == 'sram_5nm':
-                from config_system import get_sram_5nm_config
-                new_config = get_sram_5nm_config()
-            elif active_preset == 'analog':
-                from config_system import get_analog_config
-                new_config = get_analog_config()
-            else:
-                new_config = app_state.config
-
-            if new_config and user_rules:
-                for i, new_rule in enumerate(new_config.check_rules):
-                    for user_rule in user_rules:
-                        if new_rule.rule_id == user_rule.rule_id:
-                            new_config.check_rules[i] = user_rule
-                            break
-                new_rule_ids = {r.rule_id for r in new_config.check_rules}
-                for user_rule in user_rules:
-                    if user_rule.rule_id not in new_rule_ids:
-                        new_config.check_rules.append(user_rule)
-
-            app_state.config = new_config
-
-            if app_state.engine:
-                app_state.engine.config = app_state.config
-                app_state.engine.tech = app_state.config.tech_config
-
-        config_info = f"{app_state.config.name} v{app_state.config.version}"
-
-        # Build rules table
-        rules_data = []
-        for rule in app_state.config.check_rules:
-            rules_data.append({
-                'ID': rule.rule_id,
-                'row_id': rule.rule_id,
-                'Name': rule.name,
-                'Type': rule.constraint_type.value,
-                'Severity': rule.severity.value,
-                'Enabled': rule.enabled,
-                'Targets': ', '.join(rule.target_nets[:2]) + ('...' if len(rule.target_nets) > 2 else '')
-            })
-
-        rules_table = dash_table.DataTable(
-            data=rules_data,
-            columns=[
-                {'name': 'Name', 'id': 'Name', 'editable': True},
-                {'name': 'Type', 'id': 'Type', 'presentation': 'dropdown'},
-                {'name': 'Severity', 'id': 'Severity', 'presentation': 'dropdown'},
-                {'name': 'Enabled', 'id': 'Enabled'},
-                {'name': 'Targets', 'id': 'Targets', 'editable': True},
-            ],
-            editable=True,
-            dropdown={
-                'Type': {
-                    'options': [
-                        {'label': 'hard', 'value': 'hard'},
-                        {'label': 'soft', 'value': 'soft'}
-                    ]
-                },
-                'Severity': {
-                    'options': [
-                        {'label': 'critical', 'value': 'critical'},
-                        {'label': 'warning', 'value': 'warning'},
-                        {'label': 'info', 'value': 'info'}
-                    ]
-                },
-            },
-            style_cell={'textAlign': 'left', 'fontSize': 12, 'fontFamily': 'var(--font-data)', 'backgroundColor': 'var(--bg-input)', 'color': 'var(--text-primary)'},
-            style_header={'fontWeight': '600', 'backgroundColor': 'var(--bg-tertiary)', 'color': 'var(--text-secondary)', 'textTransform': 'uppercase', 'fontSize': '10px'},
-            style_data_conditional=[
-                {'if': {'filter_query': '{Severity} = "critical"'}, 'color': 'var(--status-fail)'},
-                {'if': {'filter_query': '{Severity} = "warning"'}, 'color': 'var(--status-warning)'},
-                {'if': {'filter_query': '{Type} = "hard"'}, 'backgroundColor': 'rgba(239, 68, 68, 0.1)'},
-            ],
-            page_size=15,
-            sort_action='native',
-            filter_action='native',
-            row_selectable=False,
-            # id='rules-datatable' removed — was dead reference after routing rewrite
-        )
-
-        return (
-            config_info,
-            app_state.config.tech_config.node,
-            str(app_state.config.tech_config.voltage),
-            str(app_state.config.tech_config.temperature),
-            str(len(app_state.config.check_rules)),
-            rules_table
-        )
-
-
-    # =========================================================================
     # Export Callbacks
     # =========================================================================
 
@@ -644,23 +516,6 @@ def register_callbacks(app: Dash):
 
         except Exception as e:
             return html.Div(f"Error generating reports: {str(e)}", className="alert alert-danger")
-
-    @app.callback(
-        Output('download-config', 'data'),
-        [Input('btn-export-config', 'n_clicks')]
-    )
-    def export_config(n_clicks):
-        """Export configuration to JSON file."""
-        if not n_clicks:
-            raise PreventUpdate
-
-        config_dict = app_state.config.to_dict()
-        return dict(
-            content=json.dumps(config_dict, indent=2),
-            filename=f"layout_review_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        )
-
-
 
     # ---------------------------------------------------------------------
     # Routing review tab callbacks (replaces old Configuration + Review tabs)
