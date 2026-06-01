@@ -1,0 +1,1014 @@
+"""Dash application callbacks for interactivity."""
+
+import base64
+import json
+import os
+import re
+from datetime import datetime
+from typing import List
+
+from dash import Dash, dcc, html, Input, Output, State, dash_table, callback_context
+from dash.exceptions import PreventUpdate
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from app.state import app_state
+from core.data_parsing import parse_shape_txt, import_shape_from_file
+from core.visualization import create_net_visualization
+from core.path_analysis import get_view_for_visible_layers
+
+
+def natural_sort_key(s):
+    """Natural sort key for numeric strings.
+
+    Enables sorting like: net1, net2, net10, net20 (not net1, net10, net2, net20)
+    """
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+
+def register_callbacks(app: Dash):
+    """Register all Dash callbacks on the application.
+
+    Args:
+        app: Dash application instance
+    """
+
+    # =========================================================================
+    # Net Selector Callbacks
+    # =========================================================================
+
+    @app.callback(
+        [Output('upload-status', 'children'),
+         Output('yaml-upload-status', 'children'),
+         Output('net-selector', 'options'),
+         Output('net-selector', 'value'),
+         Output('net-count-badge', 'children')],
+        [Input('upload-data', 'contents'),
+         Input('upload-yaml', 'contents'),
+         Input('net-filter', 'value'),
+         Input('btn-select-all', 'n_clicks'),
+         Input('btn-clear', 'n_clicks')],
+        [State('upload-data', 'filename'),
+         State('upload-yaml', 'filename')],
+        prevent_initial_call=True
+    )
+    def update_net_selector(contents, yaml_content, filter_text, select_all, clear,
+                            filenames, yaml_filename):
+        """Update net selector - handles file upload, YAML batch import, filtering, select all/clear."""
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        # Handle shape file upload
+        if trigger_id == 'upload-data':
+            if not contents:
+                raise PreventUpdate
+
+            imported = 0
+            for content, filename in zip(contents, filenames):
+                try:
+                    content_type, content_string = content.split(',')
+                    decoded = base64.b64decode(content_string).decode('utf-8')
+
+                    result = parse_shape_txt(decoded, filename)
+                    if result:
+                        net_name, shapes_data, polygons = result
+                        app_state.nets_data[net_name] = {
+                            'shapes': shapes_data,
+                            'polygons': polygons,
+                            'filename': filename
+                        }
+                        imported += 1
+                except Exception as e:
+                    print(f"Error importing {filename}: {e}")
+
+            if app_state.nets_data:
+                from review_engine import ProfessionalLayoutReviewEngine
+                app_state.engine = ProfessionalLayoutReviewEngine(app_state.config)
+                for net_name, data in app_state.nets_data.items():
+                    app_state.engine.add_net_polygons(net_name, data['polygons'])
+                # Calculate RC for all imported nets
+                for net_name in app_state.nets_data.keys():
+                    app_state.engine.calculate_net_rc(net_name)
+
+            status = f"Imported {imported} files"
+            options = [{'label': name, 'value': name} for name in
+                       sorted(app_state.nets_data.keys(), key=natural_sort_key)]
+
+            return status, "", options, [], f"{len(app_state.nets_data)} nets"
+
+        # Handle YAML batch import
+        if trigger_id == 'upload-yaml':
+            if not yaml_content:
+                raise PreventUpdate
+
+            try:
+                content_type, content_string = yaml_content.split(',')
+                decoded = base64.b64decode(content_string).decode('utf-8')
+
+                try:
+                    import yaml
+                except ImportError:
+                    return "", "PyYAML not installed. Run: pip install pyyaml", [], [], "0 nets"
+
+                # Handle empty YAML content
+                if not decoded.strip():
+                    return "", "Error: YAML file is empty", [], [], "0 nets"
+
+                yaml_config = yaml.safe_load(decoded)
+
+                # Validate yaml_config is a dict with 'shapes'
+                if not isinstance(yaml_config, dict):
+                    return "", "Error: Invalid YAML format - expected a dictionary", [], [], "0 nets"
+
+                if 'shapes' not in yaml_config:
+                    return "", "Error: Missing 'shapes' key in YAML", [], [], "0 nets"
+
+                options_cfg = yaml_config.get('options', {})
+                auto_prefix = options_cfg.get('auto_prefix', '')
+                clear_existing = options_cfg.get('clear_existing', False)
+                skip_missing = options_cfg.get('skip_missing', True)
+
+                if clear_existing:
+                    app_state.nets_data.clear()
+
+                imported = 0
+                failed_files = []
+                shapes_list = yaml_config.get('shapes', [])
+
+                for shape_item in shapes_list:
+                    if isinstance(shape_item, dict):
+                        filepath = shape_item.get('file', '')
+                        custom_net_name = shape_item.get('net_name')
+                    elif isinstance(shape_item, str):
+                        filepath = shape_item
+                        custom_net_name = None
+                    else:
+                        continue
+
+                    filepath = os.path.expanduser(filepath)
+
+                    if not os.path.exists(filepath):
+                        # Track failed files for better user feedback
+                        failed_files.append(os.path.basename(filepath))
+                        if skip_missing:
+                            continue
+                        else:
+                            return "", f"File not found: {filepath}", [], [], f"{len(app_state.nets_data)} nets"
+
+                    if custom_net_name and auto_prefix:
+                        custom_net_name = auto_prefix + custom_net_name
+
+                    result = import_shape_from_file(filepath, custom_net_name)
+                    if result:
+                        app_state.nets_data[result['net_name']] = {
+                            'shapes': result['shapes'],
+                            'polygons': result['polygons'],
+                            'filename': result['filename']
+                        }
+                        imported += 1
+                    else:
+                        failed_files.append(os.path.basename(filepath))
+
+                if app_state.nets_data:
+                    from review_engine import ProfessionalLayoutReviewEngine
+                    app_state.engine = ProfessionalLayoutReviewEngine(app_state.config)
+                    for net_name, data in app_state.nets_data.items():
+                        app_state.engine.add_net_polygons(net_name, data['polygons'])
+                    # Calculate RC for all imported nets
+                    for net_name in app_state.nets_data.keys():
+                        app_state.engine.calculate_net_rc(net_name)
+
+                # Build informative status message
+                total = len(shapes_list)
+                if failed_files:
+                    yaml_status = f"YAML batch: {imported}/{total} files imported, {len(failed_files)} failed: {', '.join(failed_files[:3])}{'...' if len(failed_files) > 3 else ''}"
+                else:
+                    yaml_status = f"YAML batch: {imported}/{total} files imported successfully"
+
+                options = [{'label': name, 'value': name} for name in
+                          sorted(app_state.nets_data.keys(), key=natural_sort_key)]
+
+                return "", yaml_status, options, [], f"{len(app_state.nets_data)} nets"
+
+            except yaml.YAMLError as e:
+                error_msg = f"YAML parse error: {str(e)[:100]}"
+                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets"
+            except Exception as e:
+                error_msg = f"Error: {str(e)[:100]}"
+                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets"
+
+        # Handle filter, select all, clear
+        all_nets = sorted(app_state.nets_data.keys(), key=natural_sort_key)
+
+        if trigger_id == 'net-filter':
+            if filter_text:
+                try:
+                    pattern = re.compile(filter_text, re.IGNORECASE)
+                    filtered = [n for n in all_nets if pattern.search(n)]
+                except re.error:
+                    filtered = all_nets
+            else:
+                filtered = all_nets
+            options = [{'label': n, 'value': n} for n in filtered]
+            return "", "", options, [], f"{len(app_state.nets_data)} nets"
+
+        elif trigger_id == 'btn-select-all':
+            options = [{'label': n, 'value': n} for n in all_nets]
+            return "", "", options, all_nets, f"{len(app_state.nets_data)} nets"
+
+        elif trigger_id == 'btn-clear':
+            options = [{'label': n, 'value': n} for n in all_nets]
+            return "", "", options, [], f"{len(app_state.nets_data)} nets"
+
+        raise PreventUpdate
+
+    # =========================================================================
+    # Layout Graph Callback
+    # =========================================================================
+
+    @app.callback(
+        [Output('path-config-status', 'children'),
+         Output('layout-graph', 'figure'),
+         Output('zoom-level', 'children')],
+        [Input('net-selector', 'value'),
+         Input('btn-apply-path-config', 'n_clicks'),
+         Input('btn-canvas-fit', 'n_clicks'),
+         Input('btn-canvas-zoom-in', 'n_clicks'),
+         Input('btn-canvas-zoom-out', 'n_clicks'),
+         Input('btn-all-layer', 'n_clicks'),
+         Input('btn-no-layer', 'n_clicks'),
+         Input('btn-fit', 'n_clicks'),
+         Input('btn-zoom-in', 'n_clicks'),
+         Input('btn-zoom-out', 'n_clicks'),
+         Input('btn-pan-up', 'n_clicks'),
+         Input('btn-pan-down', 'n_clicks'),
+         Input('btn-pan-left', 'n_clicks'),
+         Input('btn-pan-right', 'n_clicks')],
+        [State('sd-layers', 'value'),
+         State('poly-layers', 'value')],
+        prevent_initial_call=True
+    )
+    def update_layout_graph(selected_nets, path_config_clicks, btn_fit, btn_zoom_in,
+                           btn_zoom_out, btn_all_layer, btn_no_layer,
+                           btn_fit_sidebar, btn_zoom_in_sidebar, btn_zoom_out_sidebar,
+                           btn_pan_up, btn_pan_down, btn_pan_left, btn_pan_right,
+                           sd_value, poly_value):
+        """Update layout graph - handles path config, zoom, and layer visibility."""
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        # Handle path configuration button
+        if trigger_id == 'btn-apply-path-config':
+            if not path_config_clicks:
+                raise PreventUpdate
+
+            sd_layers = [s.strip() for s in sd_value.split(',') if s.strip()]
+            poly_layers = [s.strip() for s in poly_value.split(',') if s.strip()]
+
+            app_state.sd_layers = sd_layers
+            app_state.poly_layers = poly_layers
+            app_state.path_configured = True
+
+            status = f"SD: {', '.join(sd_layers)} -> Gate: {', '.join(poly_layers)}"
+
+            if selected_nets:
+                fig = create_net_visualization(selected_nets)
+            else:
+                fig = go.Figure()
+
+            zoom_display = f"{app_state.zoom_level:.2f}x"
+            return status, fig, zoom_display
+
+        # Other triggers
+        if not selected_nets:
+            return "", go.Figure(), "1.00x"
+
+        # Collect all layers
+        all_layers = set()
+        for net_name in selected_nets:
+            if net_name in app_state.nets_data:
+                shapes_data = app_state.nets_data[net_name].get('shapes', {})
+                all_layers.update(shapes_data.keys())
+
+        if app_state.visible_layers is None:
+            app_state.visible_layers = all_layers.copy()
+
+        # Handle button events - zoom/pan handlers
+        if trigger_id in ('btn-canvas-fit', 'btn-fit'):
+            app_state.zoom_level = 1.0
+            app_state.current_view = None
+            fig = create_net_visualization(selected_nets, mode='fit')
+
+        elif trigger_id in ('btn-canvas-zoom-in', 'btn-zoom-in'):
+            if app_state.current_view is None:
+                app_state.current_view = get_view_for_visible_layers(
+                    selected_nets, app_state.visible_layers)
+
+            if app_state.current_view:
+                x_center = (app_state.current_view['x_min'] + app_state.current_view['x_max']) / 2
+                y_center = (app_state.current_view['y_min'] + app_state.current_view['y_max']) / 2
+                x_range = (app_state.current_view['x_max'] - app_state.current_view['x_min']) / app_state.zoom_step
+                y_range = (app_state.current_view['y_max'] - app_state.current_view['y_min']) / app_state.zoom_step
+                app_state.current_view = {
+                    'x_min': x_center - x_range/2,
+                    'x_max': x_center + x_range/2,
+                    'y_min': y_center - y_range/2,
+                    'y_max': y_center + y_range/2,
+                }
+                app_state.zoom_level = min(app_state.zoom_level * app_state.zoom_step, 100.0)
+            fig = create_net_visualization(selected_nets, mode='zoom_in')
+
+        elif trigger_id in ('btn-canvas-zoom-out', 'btn-zoom-out'):
+            if app_state.current_view is None:
+                app_state.current_view = get_view_for_visible_layers(
+                    selected_nets, app_state.visible_layers)
+
+            if app_state.current_view:
+                x_center = (app_state.current_view['x_min'] + app_state.current_view['x_max']) / 2
+                y_center = (app_state.current_view['y_min'] + app_state.current_view['y_max']) / 2
+                x_range = (app_state.current_view['x_max'] - app_state.current_view['x_min']) * app_state.zoom_step
+                y_range = (app_state.current_view['y_max'] - app_state.current_view['y_min']) * app_state.zoom_step
+                app_state.current_view = {
+                    'x_min': x_center - x_range/2,
+                    'x_max': x_center + x_range/2,
+                    'y_min': y_center - y_range/2,
+                    'y_max': y_center + y_range/2,
+                }
+                app_state.zoom_level = max(app_state.zoom_level / app_state.zoom_step, 0.01)
+            fig = create_net_visualization(selected_nets, mode='zoom_out')
+
+        elif trigger_id in ('btn-pan-up', 'btn-pan-down', 'btn-pan-left', 'btn-pan-right'):
+            if app_state.current_view is None:
+                app_state.current_view = get_view_for_visible_layers(
+                    selected_nets, app_state.visible_layers)
+
+            if app_state.current_view:
+                x_range = app_state.current_view['x_max'] - app_state.current_view['x_min']
+                y_range = app_state.current_view['y_max'] - app_state.current_view['y_min']
+                pan_step = 0.15
+
+                if trigger_id == 'btn-pan-up':
+                    y_shift = y_range * pan_step
+                    app_state.current_view = {
+                        'x_min': app_state.current_view['x_min'],
+                        'x_max': app_state.current_view['x_max'],
+                        'y_min': app_state.current_view['y_min'] + y_shift,
+                        'y_max': app_state.current_view['y_max'] + y_shift,
+                    }
+                elif trigger_id == 'btn-pan-down':
+                    y_shift = y_range * pan_step
+                    app_state.current_view = {
+                        'x_min': app_state.current_view['x_min'],
+                        'x_max': app_state.current_view['x_max'],
+                        'y_min': app_state.current_view['y_min'] - y_shift,
+                        'y_max': app_state.current_view['y_max'] - y_shift,
+                    }
+                elif trigger_id == 'btn-pan-left':
+                    x_shift = x_range * pan_step
+                    app_state.current_view = {
+                        'x_min': app_state.current_view['x_min'] - x_shift,
+                        'x_max': app_state.current_view['x_max'] - x_shift,
+                        'y_min': app_state.current_view['y_min'],
+                        'y_max': app_state.current_view['y_max'],
+                    }
+                elif trigger_id == 'btn-pan-right':
+                    x_shift = x_range * pan_step
+                    app_state.current_view = {
+                        'x_min': app_state.current_view['x_min'] + x_shift,
+                        'x_max': app_state.current_view['x_max'] + x_shift,
+                        'y_min': app_state.current_view['y_min'],
+                        'y_max': app_state.current_view['y_max'],
+                    }
+            fig = create_net_visualization(selected_nets, mode='zoom_in')
+
+        elif trigger_id == 'btn-all-layer':
+            app_state.visible_layers = all_layers.copy()
+            app_state.current_view = None
+            fig = create_net_visualization(selected_nets, mode='fit')
+
+        elif trigger_id == 'btn-no-layer':
+            app_state.visible_layers = set()
+            fig = create_net_visualization(selected_nets, mode='fit')
+
+        else:
+            fig = create_net_visualization(selected_nets, mode='fit')
+
+        status = ""
+        if app_state.path_configured:
+            status = f"SD: {', '.join(app_state.sd_layers)} -> Gate: {', '.join(app_state.poly_layers)}"
+
+        zoom_display = f"{app_state.zoom_level:.2f}x"
+        return status, fig, zoom_display
+
+    # =========================================================================
+    # Properties Panel Callbacks
+    # =========================================================================
+
+    @app.callback(
+        [Output('prop-net-name', 'children'),
+         Output('prop-layer-count', 'children'),
+         Output('prop-shape-count', 'children'),
+         Output('prop-resistance', 'children'),
+         Output('prop-capacitance', 'children'),
+         Output('prop-length', 'children'),
+         Output('prop-tau-rc', 'children'),
+         Output('prop-tpd', 'children'),
+         Output('prop-critical', 'children'),
+         Output('prop-warnings', 'children'),
+         Output('prop-info', 'children')],
+        [Input('net-selector', 'value')]
+    )
+    def update_properties_panel(selected_nets):
+        """Update properties panel with selected net info."""
+        # 返回11个值: net_name, layer_count, shape_count, resistance, capacitance,
+        #           length, tau_rc, tpd, critical, warnings, info
+        if not selected_nets or len(selected_nets) != 1:
+            return ['--'] + ['0'] * 10
+
+        net_name = selected_nets[0]
+        if net_name not in app_state.nets_data:
+            return [net_name] + ['0'] * 10
+
+        data = app_state.nets_data[net_name]
+        shapes = data['shapes']
+        total_polys = sum(len(p) for p in shapes.values())
+
+        # Get RC data if engine exists
+        resistance = '0 Ω'
+        capacitance = '0 fF'
+        length = '0 μm'
+        tau_rc = '0 ns'
+        tpd = '0 ns'
+
+        if app_state.engine and hasattr(app_state.engine, 'net_rc_data'):
+            if net_name in app_state.engine.net_rc_data:
+                rc_data = app_state.engine.net_rc_data[net_name]
+                resistance = f"{rc_data.total_resistance:.2f} Ω"
+                capacitance = f"{rc_data.total_capacitance:.2f} fF"
+                length = f"{rc_data.total_length:.2f} μm"
+                tau_rc = f"{rc_data.tau_rc:.4f} ns"
+                tpd = f"{rc_data.tpd_50:.4f} ns"
+
+        # Count violations
+        critical = '0'
+        warnings = '0'
+        info = '0'
+
+        if app_state.engine and hasattr(app_state.engine, 'violations'):
+            for v in app_state.engine.violations:
+                if v.net_name == net_name:
+                    if v.severity.value == 'critical':
+                        critical = str(int(critical) + 1)
+                    elif v.severity.value == 'warning':
+                        warnings = str(int(warnings) + 1)
+                    else:
+                        info = str(int(info) + 1)
+
+        return (net_name, str(len(shapes)), str(total_polys),
+                resistance, capacitance, length,
+                tau_rc, tpd,
+                critical, warnings, info)
+
+    # =========================================================================
+    # Configuration Tab Callbacks
+    # =========================================================================
+
+    @app.callback(
+        [Output('current-config-info', 'children'),
+         Output('tech-node', 'value'),
+         Output('tech-voltage', 'value'),
+         Output('tech-temp', 'value'),
+         Output('total-rules', 'value'),
+         Output('rules-table-container', 'children')],
+        [Input('preset-selector', 'value'),
+         Input('preset-selector-config', 'value'),
+         Input('btn-refresh-rules', 'n_clicks')]
+    )
+    def update_config(preset, preset_config, refresh_clicks):
+        """Update configuration panel when preset changes or refresh is clicked."""
+        ctx = callback_context
+        if not ctx.triggered:
+            trigger_id = None
+        else:
+            trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        is_refresh = trigger_id == 'btn-refresh-rules'
+
+        # Use whichever preset selector was triggered
+        active_preset = preset if trigger_id == 'preset-selector' else preset_config
+        if not active_preset:
+            active_preset = preset
+
+        if not is_refresh and active_preset:
+            user_rules = app_state.config.check_rules.copy() if app_state.config else []
+
+            if active_preset == 'sram_7nm':
+                from config_system import get_sram_7nm_config
+                new_config = get_sram_7nm_config()
+            elif active_preset == 'sram_5nm':
+                from config_system import get_sram_5nm_config
+                new_config = get_sram_5nm_config()
+            elif active_preset == 'analog':
+                from config_system import get_analog_config
+                new_config = get_analog_config()
+            else:
+                new_config = app_state.config
+
+            if new_config and user_rules:
+                for i, new_rule in enumerate(new_config.check_rules):
+                    for user_rule in user_rules:
+                        if new_rule.rule_id == user_rule.rule_id:
+                            new_config.check_rules[i] = user_rule
+                            break
+                new_rule_ids = {r.rule_id for r in new_config.check_rules}
+                for user_rule in user_rules:
+                    if user_rule.rule_id not in new_rule_ids:
+                        new_config.check_rules.append(user_rule)
+
+            app_state.config = new_config
+
+            if app_state.engine:
+                app_state.engine.config = app_state.config
+                app_state.engine.tech = app_state.config.tech_config
+
+        config_info = f"{app_state.config.name} v{app_state.config.version}"
+
+        # Build rules table
+        rules_data = []
+        for rule in app_state.config.check_rules:
+            rules_data.append({
+                'ID': rule.rule_id,
+                'row_id': rule.rule_id,
+                'Name': rule.name,
+                'Type': rule.constraint_type.value,
+                'Severity': rule.severity.value,
+                'Enabled': rule.enabled,
+                'Targets': ', '.join(rule.target_nets[:2]) + ('...' if len(rule.target_nets) > 2 else '')
+            })
+
+        rules_table = dash_table.DataTable(
+            data=rules_data,
+            columns=[
+                {'name': 'Name', 'id': 'Name', 'editable': True},
+                {'name': 'Type', 'id': 'Type', 'presentation': 'dropdown'},
+                {'name': 'Severity', 'id': 'Severity', 'presentation': 'dropdown'},
+                {'name': 'Enabled', 'id': 'Enabled'},
+                {'name': 'Targets', 'id': 'Targets', 'editable': True},
+            ],
+            editable=True,
+            dropdown={
+                'Type': {
+                    'options': [
+                        {'label': 'hard', 'value': 'hard'},
+                        {'label': 'soft', 'value': 'soft'}
+                    ]
+                },
+                'Severity': {
+                    'options': [
+                        {'label': 'critical', 'value': 'critical'},
+                        {'label': 'warning', 'value': 'warning'},
+                        {'label': 'info', 'value': 'info'}
+                    ]
+                },
+            },
+            style_cell={'textAlign': 'left', 'fontSize': 12, 'fontFamily': 'var(--font-data)', 'backgroundColor': 'var(--bg-input)', 'color': 'var(--text-primary)'},
+            style_header={'fontWeight': '600', 'backgroundColor': 'var(--bg-tertiary)', 'color': 'var(--text-secondary)', 'textTransform': 'uppercase', 'fontSize': '10px'},
+            style_data_conditional=[
+                {'if': {'filter_query': '{Severity} = "critical"'}, 'color': 'var(--status-fail)'},
+                {'if': {'filter_query': '{Severity} = "warning"'}, 'color': 'var(--status-warning)'},
+                {'if': {'filter_query': '{Type} = "hard"'}, 'backgroundColor': 'rgba(239, 68, 68, 0.1)'},
+            ],
+            page_size=15,
+            sort_action='native',
+            filter_action='native',
+            row_selectable=False,
+            id='rules-datatable'
+        )
+
+        return (
+            config_info,
+            app_state.config.tech_config.node,
+            str(app_state.config.tech_config.voltage),
+            str(app_state.config.tech_config.temperature),
+            str(len(app_state.config.check_rules)),
+            rules_table
+        )
+
+    # =========================================================================
+    # Rule Editor Callbacks - Modal visibility via style
+    # =========================================================================
+
+    @app.callback(
+        [Output('rule-editor-modal', 'style'),
+         Output('edit-rule-id', 'value'),
+         Output('edit-rule-name', 'value'),
+         Output('edit-rule-description', 'value'),
+         Output('edit-rule-constraint-type', 'value'),
+         Output('edit-rule-severity', 'value'),
+         Output('edit-rule-target-nets', 'value'),
+         Output('edit-rule-parameters', 'value'),
+         Output('edit-rule-suggestion', 'value'),
+         Output('edit-rule-reference', 'value'),
+         Output('edit-rule-enabled', 'value'),
+         Output('selected-rule-store', 'data'),
+         Output('rule-edit-validation', 'children')],
+        [Input('btn-add-rule', 'n_clicks'),
+         Input('rules-datatable', 'derived_virtual_selected_rows'),
+         Input('btn-save-rule', 'n_clicks'),
+         Input('btn-apply-rule', 'n_clicks'),
+         Input('btn-delete-rule', 'n_clicks'),
+         Input('btn-cancel-rule-edit', 'n_clicks')],
+        [State('rules-datatable', 'derived_virtual_data'),
+         State('selected-rule-store', 'data'),
+         State('edit-rule-id', 'value'),
+         State('edit-rule-name', 'value'),
+         State('edit-rule-description', 'value'),
+         State('edit-rule-constraint-type', 'value'),
+         State('edit-rule-severity', 'value'),
+         State('edit-rule-target-nets', 'value'),
+         State('edit-rule-parameters', 'value'),
+         State('edit-rule-suggestion', 'value'),
+         State('edit-rule-reference', 'value'),
+         State('edit-rule-enabled', 'value')]
+    )
+    def handle_rule_editor(add_clicks, selected_row_indices, save_clicks, apply_clicks,
+                          delete_clicks, cancel_clicks, table_data,
+                          selected_rule_id, edit_id, edit_name, edit_desc,
+                          edit_constraint, edit_severity, edit_targets,
+                          edit_params, edit_suggestion, edit_reference,
+                          edit_enabled):
+        """Handle rule editor modal - add, edit, save, delete operations."""
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        # Determine if modal should be shown
+        modal_show = {'display': 'block'}
+        modal_hide = {'display': 'none'}
+
+        if trigger_id == 'btn-add-rule':
+            return (
+                modal_show, '', '', '', 'soft', 'warning', '.*', '{}', '', '',
+                [True], None, ''
+            )
+
+        elif trigger_id == 'rules-datatable':
+            if selected_row_indices is None or len(selected_row_indices) == 0:
+                return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+            # Get selected row
+            row_idx = selected_row_indices[0]
+            if row_idx >= len(table_data):
+                return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+            row = table_data[row_idx]
+            rule_id = row.get('ID')
+
+            if not rule_id or not app_state.config or not app_state.config.check_rules:
+                return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+            # Find the rule
+            rule = None
+            for r in app_state.config.check_rules:
+                if r.rule_id == rule_id:
+                    rule = r
+                    break
+
+            if not rule:
+                return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+            params_json = json.dumps(rule.parameters) if rule.parameters else '{}'
+            enabled_value = [True] if rule.enabled else []
+
+            return (
+                modal_show,
+                rule.rule_id,
+                rule.name,
+                rule.description or '',
+                rule.constraint_type.value,
+                rule.severity.value,
+                ', '.join(rule.target_nets),
+                params_json,
+                rule.suggestion or '',
+                rule.reference or '',
+                enabled_value,
+                rule.rule_id,
+                ''
+            )
+
+        elif trigger_id == 'btn-cancel-rule-edit':
+            return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+        elif trigger_id in ('btn-save-rule', 'btn-apply-rule'):
+            is_save = trigger_id == 'btn-save-rule'
+
+            if not edit_id or not edit_name:
+                return (
+                    modal_show, edit_id, edit_name, edit_desc, edit_constraint,
+                    edit_severity, edit_targets, edit_params, edit_suggestion,
+                    edit_reference, edit_enabled, selected_rule_id,
+                    'Rule ID and Name are required!'
+                )
+
+            targets = [t.strip() for t in edit_targets.split(',') if t.strip()]
+
+            try:
+                params = json.loads(edit_params) if edit_params else {}
+            except json.JSONDecodeError:
+                return (
+                    modal_show, edit_id, edit_name, edit_desc, edit_constraint,
+                    edit_severity, edit_targets, edit_params, edit_suggestion,
+                    edit_reference, edit_enabled, selected_rule_id,
+                    'Invalid JSON in parameters!'
+                )
+
+            from config_system import CheckRule, ConstraintType, Severity
+
+            # edit_enabled is a list - convert to boolean
+            enabled = True if True in edit_enabled else False
+
+            new_rule = CheckRule(
+                rule_id=edit_id,
+                name=edit_name,
+                description=edit_desc or '',
+                constraint_type=ConstraintType(edit_constraint),
+                severity=Severity(edit_severity),
+                target_nets=targets,
+                enabled=enabled,
+                parameters=params,
+                suggestion=edit_suggestion or '',
+                reference=edit_reference or ''
+            )
+
+            if selected_rule_id is None:
+                success = app_state.config.add_rule(new_rule)
+                if not success:
+                    return (
+                        modal_show, edit_id, edit_name, edit_desc, edit_constraint,
+                        edit_severity, edit_targets, edit_params, edit_suggestion,
+                        edit_reference, edit_enabled, selected_rule_id,
+                        f'Rule ID {edit_id} already exists!'
+                    )
+            else:
+                app_state.config.update_rule(
+                    selected_rule_id,
+                    rule_id=edit_id,
+                    name=edit_name,
+                    description=edit_desc,
+                    constraint_type=ConstraintType(edit_constraint),
+                    severity=Severity(edit_severity),
+                    target_nets=targets,
+                    enabled=enabled,
+                    parameters=params,
+                    suggestion=edit_suggestion,
+                    reference=edit_reference
+                )
+
+            if app_state.engine:
+                app_state.engine.config = app_state.config
+
+            if is_save:
+                return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+            else:
+                return (modal_show, edit_id, edit_name, edit_desc, edit_constraint,
+                        edit_severity, edit_targets, edit_params, edit_suggestion,
+                        edit_reference, edit_enabled, selected_rule_id,
+                        'Applied successfully!')
+
+        elif trigger_id == 'btn-delete-rule':
+            if selected_rule_id:
+                app_state.config.delete_rule(selected_rule_id)
+                if app_state.engine:
+                    app_state.engine.config = app_state.config
+
+            return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+        return (modal_hide, '', '', '', 'soft', 'warning', '.*', '{}', '', '', [True], None, '')
+
+    # =========================================================================
+    # Table Inline Edit Callback
+    # =========================================================================
+
+    @app.callback(
+        Output('table-edit-status', 'children'),
+        [Input('btn-apply-table-changes', 'n_clicks')],
+        [State('rules-datatable', 'data')]
+    )
+    def apply_table_changes(n_clicks, table_data):
+        """Apply inline table edits to rules configuration."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        if not table_data or not app_state.config:
+            return "No data to apply"
+
+        try:
+            from config_system import ConstraintType, Severity
+
+            rules_by_id = {r.rule_id: r for r in app_state.config.check_rules}
+
+            updated_count = 0
+            for row in table_data:
+                rule_id = row.get('ID')
+                if not rule_id or rule_id not in rules_by_id:
+                    continue
+
+                rule = rules_by_id[rule_id]
+
+                targets_str = row.get('Targets', '')
+                if targets_str.endswith('...'):
+                    targets = rule.target_nets
+                else:
+                    targets = [t.strip() for t in targets_str.split(',') if t.strip()]
+
+                app_state.config.update_rule(
+                    rule_id,
+                    name=row.get('Name', rule.name),
+                    constraint_type=ConstraintType(row.get('Type', rule.constraint_type.value)),
+                    severity=Severity(row.get('Severity', rule.severity.value)),
+                    target_nets=targets,
+                    enabled=bool(row.get('Enabled', True))
+                )
+                updated_count += 1
+
+            if app_state.engine:
+                app_state.engine.config = app_state.config
+
+            return f"{updated_count} rules updated successfully!"
+
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    # =========================================================================
+    # Review Tab Callbacks
+    # =========================================================================
+
+    @app.callback(
+        [Output('summary-total-nets', 'children'),
+         Output('summary-critical', 'children'),
+         Output('summary-warnings', 'children'),
+         Output('summary-info', 'children'),
+         Output('violations-table-container', 'children'),
+         Output('violation-count-badge', 'children'),
+         Output('violations-panel-count', 'children'),
+         Output('matching-table-container', 'children'),
+         Output('matching-count-badge', 'children'),
+         Output('matching-count', 'children')],
+        [Input('btn-run-review-panel', 'n_clicks')],
+        [State('net-selector', 'value')]
+    )
+    def run_review(panel_btn_clicks, selected_nets):
+        """Run full layout review and display results."""
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        # Verify the button was actually clicked (not just state changed)
+        if trigger_id != 'btn-run-review-panel' or not panel_btn_clicks:
+            raise PreventUpdate
+
+        if not app_state.engine:
+            raise PreventUpdate
+
+        summary = app_state.engine.run_full_review()
+        app_state.review_completed = True
+
+        violations_data = []
+        for v in app_state.engine.violations:
+            violations_data.append({
+                'Rule': v.rule_id,
+                'Severity': v.severity.value,
+                'Net': v.net_name,
+                'Type': v.type,
+                'Message': v.message[:80] + '...' if len(v.message) > 80 else v.message
+            })
+
+        violations_table = dash_table.DataTable(
+            data=violations_data,
+            columns=[{'name': k, 'id': k} for k in ['Rule', 'Severity', 'Net', 'Type', 'Message']],
+            style_cell={'textAlign': 'left', 'fontSize': 11, 'fontFamily': 'var(--font-data)', 'backgroundColor': 'var(--bg-input)', 'color': 'var(--text-primary)', 'whiteSpace': 'normal'},
+            style_header={'fontWeight': '600', 'backgroundColor': 'var(--bg-tertiary)', 'color': 'var(--text-secondary)', 'textTransform': 'uppercase', 'fontSize': '10px'},
+            style_data_conditional=[
+                {'if': {'filter_query': '{Severity} = "critical"'}, 'backgroundColor': 'rgba(239, 68, 68, 0.1)'},
+                {'if': {'filter_query': '{Severity} = "warning"'}, 'backgroundColor': 'rgba(245, 158, 11, 0.1)'},
+            ],
+            page_size=10,
+            sort_action='native',
+            row_selectable='single'
+        ) if violations_data else html.Div("No violations found", className="text-success")
+
+        matching_data = []
+        for m in app_state.engine.matching_results:
+            matching_data.append({
+                'Net Pair': f"{m.net1} <-> {m.net2}",
+                'Score': f"{m.match_score:.1f}",
+                'Length Ratio': f"{m.length_ratio:.3f}",
+                'R Ratio': f"{m.resistance_ratio:.3f}",
+                'Issues': len(m.issues)
+            })
+
+        matching_table = dash_table.DataTable(
+            data=matching_data,
+            columns=[{'name': k, 'id': k} for k in ['Net Pair', 'Score', 'Length Ratio', 'R Ratio', 'Issues']],
+            style_cell={'textAlign': 'left', 'fontSize': 11, 'fontFamily': 'var(--font-data)', 'backgroundColor': 'var(--bg-input)', 'color': 'var(--text-primary)'},
+            style_header={'fontWeight': '600', 'backgroundColor': 'var(--bg-tertiary)', 'color': 'var(--text-secondary)', 'textTransform': 'uppercase', 'fontSize': '10px'},
+            style_data_conditional=[
+                {'if': {'filter_query': '{Score} < 60'}, 'backgroundColor': 'rgba(239, 68, 68, 0.1)'},
+                {'if': {'filter_query': '{Score} >= 80'}, 'backgroundColor': 'rgba(34, 197, 94, 0.1)'},
+            ],
+            page_size=10,
+            sort_action='native'
+        ) if matching_data else html.Div("No matching pairs analyzed")
+
+        return (
+            str(summary.total_nets),
+            str(summary.critical_count),
+            str(summary.warning_count),
+            str(summary.info_count),
+            violations_table,
+            str(len(violations_data)),
+            str(len(violations_data)),
+            matching_table,
+            str(len(matching_data)),
+            str(len(matching_data))
+        )
+
+    # =========================================================================
+    # Export Callbacks
+    # =========================================================================
+
+    @app.callback(
+        Output('export-status', 'children'),
+        [Input('btn-generate-report', 'n_clicks'),
+         Input('btn-generate-report-panel', 'n_clicks')]
+    )
+    def generate_report(btn_clicks, panel_btn_clicks):
+        """Generate PPTX and PDF reports."""
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+
+        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        n_clicks = btn_clicks or panel_btn_clicks
+        if not n_clicks or not app_state.engine:
+            raise PreventUpdate
+
+        if not app_state.review_completed:
+            return html.Div("Please run a review first before generating reports.", className="alert alert-warning")
+
+        try:
+            from report_generator import generate_reports
+
+            pptx_path, pdf_path = generate_reports(
+                app_state.engine,
+                "./output",
+                base_name="layout_review_report"
+            )
+
+            status = html.Div([
+                html.H5("Reports Generated Successfully!", className="alert-heading"),
+                html.Hr(),
+                html.P(f"PPTX: {pptx_path}"),
+                html.P(f"PDF: {pdf_path}" if pdf_path else "PDF: Not available (reportlab required)"),
+            ], className="alert alert-success")
+
+            return status
+
+        except Exception as e:
+            return html.Div(f"Error generating reports: {str(e)}", className="alert alert-danger")
+
+    @app.callback(
+        Output('download-config', 'data'),
+        [Input('btn-export-config', 'n_clicks')]
+    )
+    def export_config(n_clicks):
+        """Export configuration to JSON file."""
+        if not n_clicks:
+            raise PreventUpdate
+
+        config_dict = app_state.config.to_dict()
+        return dict(
+            content=json.dumps(config_dict, indent=2),
+            filename=f"layout_review_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
+
+
+
+    # ---------------------------------------------------------------------
+    # Routing review tab callbacks (replaces old Configuration + Review tabs)
+    # ---------------------------------------------------------------------
+    from app.routing_config import register_routing_config_callbacks
+    from app.routing_review import register_routing_review_callbacks
+    register_routing_config_callbacks(app)
+    register_routing_review_callbacks(app)
