@@ -65,24 +65,68 @@ def _coerce_vias(vias_in, tech_layers: Dict) -> list:
     return out
 
 
-def check_gates(metrics: Dict[str, Any], thresholds: "RoutingThresholds") -> Tuple[bool, List[str]]:
-    """Check all 6 metrics against thresholds. Returns (pass, fail_reasons)."""
-    reasons: List[str] = []
-    if metrics["h_ratio"] > thresholds.max_h_ratio:
-        reasons.append(f"h_ratio {metrics['h_ratio']:.2%} > max {thresholds.max_h_ratio:.2%}")
-    if metrics["v_ratio"] > thresholds.max_v_ratio:
-        reasons.append(f"v_ratio {metrics['v_ratio']:.2%} > max {thresholds.max_v_ratio:.2%}")
+def check_gates(metrics: Dict[str, Any], thresholds: "RoutingThresholds",
+                has_golden: bool = False) -> Tuple[bool, List[str]]:
+    """Check all metrics against thresholds. Returns (pass, fail_reasons).
+
+    Gates are split into:
+    - HARD: missing_via, R, C, tau — always required (real electrical violations)
+    - SOFT: h_ratio, v_ratio, via_coverage — bypassed when has_golden AND
+      similarity >= min_similarity (i.e. the net matches the golden's pattern)
+    - SIMILARITY: always required
+
+    Backward-compatible: `has_golden=False` preserves original strict behavior.
+    """
+    hard_reasons: List[str] = []
+    soft_reasons: List[str] = []
+    sim_reasons: List[str] = []
+
+    # HARD gates — always required
+    if metrics.get("missing_via_count", 0) > 0:
+        hard_reasons.append(
+            f"missing_via {metrics['missing_via_count']} > 0"
+        )
     if metrics["r_total"] > thresholds.max_r_ohm:
-        reasons.append(f"R {metrics['r_total']:.2f}Ω > max {thresholds.max_r_ohm:.2f}Ω")
+        hard_reasons.append(
+            f"R {metrics['r_total']:.2f}Ω > max {thresholds.max_r_ohm:.2f}Ω"
+        )
     if metrics["c_total"] > thresholds.max_c_ff:
-        reasons.append(f"C {metrics['c_total']:.2f}fF > max {thresholds.max_c_ff:.2f}fF")
+        hard_reasons.append(
+            f"C {metrics['c_total']:.2f}fF > max {thresholds.max_c_ff:.2f}fF"
+        )
     if metrics["effective_tau_ps"] > thresholds.max_tau_ps:
-        reasons.append(f"τ {metrics['effective_tau_ps']:.2f}ps > max {thresholds.max_tau_ps:.2f}ps")
+        hard_reasons.append(
+            f"τ {metrics['effective_tau_ps']:.2f}ps > max {thresholds.max_tau_ps:.2f}ps"
+        )
+
+    # SOFT gates — direction/coverage (can be bypassed by golden similarity)
+    if metrics["h_ratio"] > thresholds.max_h_ratio:
+        soft_reasons.append(
+            f"h_ratio {metrics['h_ratio']:.2%} > max {thresholds.max_h_ratio:.2%}"
+        )
+    if metrics["v_ratio"] > thresholds.max_v_ratio:
+        soft_reasons.append(
+            f"v_ratio {metrics['v_ratio']:.2%} > max {thresholds.max_v_ratio:.2%}"
+        )
     if metrics["via_coverage"] < thresholds.min_via_coverage:
-        reasons.append(f"via coverage {metrics['via_coverage']:.2%} < min {thresholds.min_via_coverage:.2%}")
+        soft_reasons.append(
+            f"via coverage {metrics['via_coverage']:.2%} < min {thresholds.min_via_coverage:.2%}"
+        )
+
+    # SIMILARITY gate
     if metrics["similarity_score"] < thresholds.min_similarity:
-        reasons.append(f"similarity {metrics['similarity_score']:.1f} < min {thresholds.min_similarity:.1f}")
-    return (len(reasons) == 0), reasons
+        sim_reasons.append(
+            f"similarity {metrics['similarity_score']:.1f} < min {thresholds.min_similarity:.1f}"
+        )
+
+    # Decision
+    if hard_reasons or sim_reasons:
+        # Any hard or similarity failure — return all reasons
+        return False, hard_reasons + sim_reasons + soft_reasons
+    if soft_reasons and not (has_golden and metrics["similarity_score"] >= thresholds.min_similarity):
+        # Soft fails without golden bypass
+        return False, soft_reasons
+    return True, []
 
 
 def compute_for_net(
@@ -140,7 +184,9 @@ def compute_for_net(
         "via_coverage": vc.via_coverage,
         "similarity_score": sim_score,
     }
-    gate_pass, fail_reasons = check_gates(metrics_for_gate, thresholds)
+    gate_pass, fail_reasons = check_gates(
+        metrics_for_gate, thresholds, has_golden=bool(golden_metrics)
+    )
 
     return {
         "net_name": net_name,

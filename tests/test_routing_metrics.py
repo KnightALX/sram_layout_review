@@ -75,3 +75,81 @@ def test_check_gates_returns_fail_reasons():
     pass_, reasons = check_gates(metrics, thresholds)
     assert pass_ is False
     assert len(reasons) >= 4  # h_ratio, tau_ps, via_coverage, similarity all fail
+
+
+def test_soft_gates_bypassed_with_high_golden_similarity():
+    """H-only net WITH a horizontal golden should pass the WL preset's
+    h_ratio gate via bypass (soft fail is forgiven when net matches golden)."""
+    polys = [_rect(0, 0, 10, 1, "met2")]  # only H
+    thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    # First, derive an H-only "golden" by computing a similar net's metrics
+    m_golden = compute_for_net(
+        "WL_GOLDEN", polys, [], _tech_layers(), thresholds, golden_metrics=None
+    )
+    golden_features = {k: m_golden[k] for k in (
+        "h_ratio", "v_ratio", "total_len", "via_count",
+        "r_total", "c_total", "effective_tau_ps", "bbox_aspect"
+    )}
+    # Now run the same net, but pass the golden in: similarity = ~100, soft bypass triggers
+    m = compute_for_net(
+        "WL0", polys, [], _tech_layers(), thresholds, golden_metrics=golden_features
+    )
+    assert m["similarity_score"] >= thresholds.min_similarity
+    assert m["gate_pass"] is True
+    assert m["gate_fail_reasons"] == []
+
+
+def test_hard_gates_never_bypassed():
+    """Even with high similarity (golden set), a net with missing vias or
+    excessive R must still fail — HARD gates are never bypassed."""
+    thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    # High similarity, but R exceeds max_r_ohm (HARD fail)
+    metrics = {
+        "h_ratio": 0.10, "v_ratio": 0.90,
+        "r_total": 500.0,  # >> 100.0 max_r_ohm
+        "c_total": 100.0, "effective_tau_ps": 5.0,
+        "via_coverage": 0.95, "missing_via_count": 0,
+        "similarity_score": 95.0,
+    }
+    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
+    assert pass_ is False
+    assert any("R" in r and "max" in r for r in reasons)
+    # missing_via > 0 also must always fail
+    metrics["r_total"] = 50.0
+    metrics["missing_via_count"] = 2
+    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
+    assert pass_ is False
+    assert any("missing_via" in r for r in reasons)
+
+
+def test_soft_gates_enforced_without_golden():
+    """H-only net WITHOUT golden should still fail soft gates (backward compat)."""
+    metrics = {
+        "h_ratio": 1.0,  # >> 0.15 max_h_ratio (soft fail)
+        "v_ratio": 0.0,
+        "r_total": 10.0, "c_total": 50.0, "effective_tau_ps": 1.0,
+        "via_coverage": 0.90, "missing_via_count": 0,
+        "similarity_score": 100.0,  # sim OK, no golden → defaults to 100
+    }
+    thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    pass_, reasons = check_gates(metrics, thresholds, has_golden=False)
+    assert pass_ is False
+    assert any("h_ratio" in r for r in reasons)
+
+
+def test_low_similarity_no_bypass():
+    """Net similar in shape (h_ratio passes) but with low similarity to golden
+    should still fail soft gates — bypass requires similarity >= min."""
+    metrics = {
+        "h_ratio": 0.50,  # > 0.15, soft fail
+        "v_ratio": 0.50,
+        "r_total": 10.0, "c_total": 50.0, "effective_tau_ps": 1.0,
+        "via_coverage": 0.90, "missing_via_count": 0,
+        "similarity_score": 60.0,  # < 80.0 min_similarity
+    }
+    thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
+    assert pass_ is False
+    # soft fail not bypassed, sim fail → reasons contain both
+    assert any("h_ratio" in r for r in reasons)
+    assert any("similarity" in r for r in reasons)
