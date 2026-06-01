@@ -182,9 +182,10 @@ def register_routing_review_callbacks(app):
         [Output("routing-graph", "figure"),
          Output("routing-results-table", "data"),
          Output("routing-net-picker", "options"),
-         Output("routing-config-status", "children")],
+         Output("routing-config-status", "children", allow_duplicate=True)],
         [Input("btn-run-routing-review", "n_clicks"),
          Input("routing-net-picker", "value")],
+        prevent_initial_call=True,
     )
     def update_routing_review(run_clicks, selected_net):
         from dash import callback_context
