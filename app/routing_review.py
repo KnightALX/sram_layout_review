@@ -24,53 +24,98 @@ METRIC_CARD_IDS = [
 ]
 
 
+def _make_card(label: str, value: str, sub: str = "",
+               extra_class: str = "metric-card") -> html.Div:
+    """Build a single metric card div with label / value / optional sub-line."""
+    children = [
+        html.Div(label, className="metric-label",
+                 style={"fontSize": "11px", "color": "#888"}),
+        html.Div(value, className="metric-value",
+                 style={"fontSize": "20px", "fontWeight": "600"}),
+    ]
+    if sub:
+        children.append(html.Div(sub, className="metric-sub",
+                                 style={"fontSize": "10px", "color": "#666",
+                                        "marginTop": "2px"}))
+    return html.Div(children, className=extra_class, style={
+        "flex": "1", "padding": "12px", "background": "var(--bg-input)",
+        "border": "1px solid var(--border-color)", "borderRadius": "6px",
+        "minWidth": "120px",
+    })
+
+
 def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
-    """Build the 6 summary cards (averages across batch)."""
+    """Build 6 summary cards showing data ranges (min–max) and pass/fail count.
+
+    Cards: H/V Ratio, Missing Via, Eff. R, Eff. τ, Similarity, Pass/Fail.
+    The first 5 show the [min, max] range across all batch nets.
+    The 6th shows pass count and total (e.g. "5 / 8").
+    """
+    cards: List[html.Div] = []
     if not results:
-        avg = {"h_ratio": 0, "v_ratio": 0, "missing_via": 0, "r_total": 0,
-               "tau_ps": 0, "similarity": 0, "gate": 0}
+        # Empty state — show dashes for the first 5 cards
+        for _key, label, _unit in METRIC_CARD_IDS[:-1]:
+            cards.append(_make_card(label, "—", "no review yet"))
     else:
-        n = len(results)
-        avg = {
-            "h_ratio": sum(r["h_ratio"] for r in results.values()) / n,
-            "v_ratio": sum(r["v_ratio"] for r in results.values()) / n,
-            "missing_via": sum(r["missing_via_count"] for r in results.values()) / n,
-            "r_total": sum(r["r_total"] for r in results.values()) / n,
-            "tau_ps": sum(r["effective_tau_ps"] for r in results.values()) / n,
-            "similarity": sum(r["similarity_score"] for r in results.values()) / n,
-            "gate": sum(1 for r in results.values() if r["gate_pass"]) / n * 100,
-        }
-    cards = []
-    for key, label, unit in METRIC_CARD_IDS:
-        if key in ("h_ratio", "v_ratio"):
-            value = f"{avg[key]*100:.1f}%"
-        elif key == "missing_via":
-            value = f"{avg[key]:.1f}"
-        elif key == "r_total":
-            value = f"{avg[key]:.2f}Ω"
-        elif key == "tau_ps":
-            value = f"{avg[key]:.2f}ps"
-        elif key == "similarity":
-            value = f"{avg[key]:.1f}/100"
-        else:  # gate
-            value = f"{avg[key]:.0f}%"
-        cards.append(html.Div([
-            html.Div(label, className="metric-label",
-                     style={"fontSize": "11px", "color": "#888"}),
-            html.Div(value, className="metric-value",
-                     style={"fontSize": "20px", "fontWeight": "600"}),
-        ], className="metric-card", style={
-            "flex": "1", "padding": "12px", "background": "var(--bg-input)",
-            "border": "1px solid var(--border-color)", "borderRadius": "6px",
-            "minWidth": "120px",
-        }))
+        def _minmax(extract):
+            vals = [extract(r) for r in results.values()]
+            return min(vals), max(vals)
+
+        h_lo, h_hi = _minmax(lambda r: r["h_ratio"])
+        miss_lo, miss_hi = _minmax(lambda r: r["missing_via_count"])
+        r_lo, r_hi = _minmax(lambda r: r["r_total"])
+        tau_lo, tau_hi = _minmax(lambda r: r["effective_tau_ps"])
+        sim_lo, sim_hi = _minmax(lambda r: r["similarity_score"])
+        cards = [
+            _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%"),
+            _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max"),
+            _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max"),
+            _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps",         "min–max"),
+            _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100",       "min–max"),
+        ]
+
+    # Pass / Fail card — always show count
+    n_pass = sum(1 for r in results.values() if r.get("gate_pass"))
+    n_total = len(results)
+    if n_total == 0:
+        pf_value = "—"
+        pf_sub = "no review yet"
+        pf_class = "metric-card"
+    else:
+        pf_value = f"{n_pass} / {n_total}"
+        pf_sub = "pass" if n_pass == n_total else "failing"
+        pf_class = f"metric-card {'pass' if n_pass == n_total else 'fail'}"
+    cards.append(_make_card("Pass / Fail", pf_value, pf_sub, extra_class=pf_class))
     return cards
 
 
 def _build_similarity_table() -> dash_table.DataTable:
-    """Build the per-net sortable results table."""
-    rows = []
-    for name, m in routing_state.batch_results.items():
+    """Build the per-net sortable results table with minimal styling."""
+    rows = _build_table_rows(routing_state.batch_results)
+    style_data_conditional = _compute_table_styles(rows)
+    return dash_table.DataTable(
+        data=rows,
+        columns=[{"name": k, "id": k} for k in
+                 ("Net", "Dominant", "H %", "V %", "R (Ω)", "τ (ps)",
+                  "Via Cov", "Miss Via", "Sim", "Pass")],
+        sort_action="native", filter_action="native",
+        row_selectable="single", page_size=10,
+        style_cell={"textAlign": "left", "fontSize": "11px",
+                    "padding": "6px 10px"},
+        style_data_conditional=style_data_conditional,
+        id="routing-results-table",
+    )
+
+
+def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Render the per-net results dict into a list of display rows.
+
+    Numeric cells are stored as formatted strings so the DataTable can
+    show them verbatim. The raw float values live in
+    `routing_state.batch_results` for callers that need them.
+    """
+    rows: List[Dict[str, Any]] = []
+    for name, m in batch_results.items():
         rows.append({
             "Net": name,
             "Dominant": m["dominant"],
@@ -83,28 +128,42 @@ def _build_similarity_table() -> dash_table.DataTable:
             "Sim": f"{m['similarity_score']:.1f}",
             "Pass": "✓" if m["gate_pass"] else "✗",
         })
-    return dash_table.DataTable(
-        data=rows,
-        columns=[{"name": k, "id": k} for k in
-                 ("Net", "Dominant", "H %", "V %", "R (Ω)", "τ (ps)",
-                  "Via Cov", "Miss Via", "Sim", "Pass")],
-        sort_action="native", filter_action="native",
-        row_selectable="single", page_size=10,
-        style_cell={"textAlign": "left", "fontSize": "11px"},
-        style_data_conditional=[
-            {"if": {"filter_query": '{Pass} = "✗"'}, "backgroundColor": "rgba(239, 68, 68, 0.15)"},
-            {"if": {"filter_query": '{Pass} = "✓"'}, "backgroundColor": "rgba(34, 197, 94, 0.10)"},
-        ],
-        id="routing-results-table",
-    )
+    return rows
+
+
+def _compute_table_styles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return style_data_conditional rules for the per-net table.
+
+    Minimal styling per user feedback: just the pill-style Pass cell.
+    Data bars and row-level tint were removed — the user found them too flashy.
+    """
+    return [
+        # Pill-style Pass cell — green ✓ / red ✗
+        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "✗"'},
+         "backgroundColor": "rgba(239, 68, 68, 0.85)",
+         "color": "white",
+         "fontWeight": "700",
+         "textAlign": "center",
+         "borderRadius": "10px"},
+        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "✓"'},
+         "backgroundColor": "rgba(34, 197, 94, 0.85)",
+         "color": "white",
+         "fontWeight": "700",
+         "textAlign": "center",
+         "borderRadius": "10px"},
+    ]
 
 
 def create_routing_review_tab():
     """Build the routing Layout Review tab content."""
     return html.Div([
-        # Summary cards
-        html.Div(_build_metric_cards(routing_state.batch_results),
+        # Summary cards — wrapped so the callback can update them on review
+        html.Div(id="routing-metric-cards",
+                 children=_build_metric_cards(routing_state.batch_results),
                  style={"display": "flex", "gap": "12px", "marginBottom": "16px"}),
+
+        # Empty-state banner: shown when no review has been run yet
+        html.Div(id="routing-review-empty", children=_empty_state_banner()),
 
         # Visualization
         html.Div([
@@ -132,11 +191,51 @@ def create_routing_review_tab():
         # Report export trigger
         html.Div([
             html.Button("Generate Routing Report (PPTX)", id="btn-gen-routing-pptx",
-                        className="btn btn-success btn-block"),
+                        className="btn btn-success btn-block",
+                        disabled=not routing_state.review_completed,
+                        title=("Generate PPTX report" if routing_state.review_completed
+                               else "Run a routing review first (Configuration tab)")),
             html.Div(id="routing-report-status"),
             dcc.Download(id="download-routing-pptx"),
         ]),
     ], style={"padding": "16px"})
+
+
+def _empty_state_banner():
+    """Empty-state hint shown above the metric cards."""
+    if routing_state.review_completed and routing_state.batch_results:
+        return ""  # Have results — no banner needed
+    if not app_state.nets_data:
+        return html.Div([
+            html.Div([
+                html.Span("ℹ ", style={"fontWeight": "600"}),
+                html.Span("No nets loaded yet. ", style={"fontWeight": "600"}),
+                html.Span("Open the ", style={}),
+                html.B("Layout View"),
+                html.Span(" tab, upload shape files or a YAML batch config, then "
+                          "return here and set the regex on the "),
+                html.B("Routing Config"),
+                html.Span(" tab."),
+            ], style={"fontSize": "12px"}),
+        ], className="alert",
+           style={"background": "var(--bg-input)", "border": "1px solid var(--border-color)",
+                  "borderRadius": "6px", "padding": "10px 12px", "marginBottom": "16px",
+                  "color": "var(--text-muted)"})
+    return html.Div([
+        html.Div([
+            html.Span("ℹ ", style={"fontWeight": "600"}),
+            html.Span("Nets loaded but no review run yet. ", style={"fontWeight": "600"}),
+            html.Span(f"({len(app_state.nets_data)} nets from Layout View) "),
+            html.Span("Go to the "),
+            html.B("Routing Config"),
+            html.Span(" tab, set a Batch Net Regex, then click "),
+            html.B("Run Routing Review"),
+            html.Span("."),
+        ], style={"fontSize": "12px"}),
+    ], className="alert",
+       style={"background": "var(--bg-input)", "border": "1px solid var(--border-color)",
+              "borderRadius": "6px", "padding": "10px 12px", "marginBottom": "16px",
+              "color": "var(--text-muted)"})
 
 
 def _resolve_regex(pattern: str) -> List[str]:
@@ -175,13 +274,28 @@ def _compute_violations_for_net(metrics: Dict[str, Any], thresholds) -> List[Rou
 
 def register_routing_review_callbacks(app):
     """Register all callbacks for the routing Layout Review tab."""
-    from dash import Input, Output
+    from dash import Input, Output, ctx as dash_ctx, no_update
     import plotly.graph_objects as go
+
+    # --- 0. Refresh the empty-state banner when the user switches to this tab
+    #         or when a tick passes while the tab is visible. Keeps the
+    #         "loaded but not reviewed" message in sync with Layout View. ---
+    @app.callback(
+        Output("routing-review-empty", "children"),
+        [Input("tabs", "value"),
+         Input("interval-component", "n_intervals")],
+    )
+    def _refresh_empty_banner(tab, _n):
+        if tab not in (None, "tab-routing-review"):
+            return no_update
+        return _empty_state_banner()
 
     @app.callback(
         [Output("routing-graph", "figure"),
          Output("routing-results-table", "data"),
+         Output("routing-results-table", "style_data_conditional"),
          Output("routing-net-picker", "options"),
+         Output("routing-metric-cards", "children"),
          Output("routing-config-status", "children", allow_duplicate=True)],
         [Input("btn-run-routing-review", "n_clicks"),
          Input("routing-net-picker", "value")],
@@ -223,19 +337,12 @@ def register_routing_review_callbacks(app):
         else:
             fig = go.Figure()
 
-        # Table + dropdown
-        rows = []
-        for name, mr in routing_state.batch_results.items():
-            rows.append({
-                "Net": name, "Dominant": mr["dominant"],
-                "H %": f"{mr['h_ratio']*100:.1f}", "V %": f"{mr['v_ratio']*100:.1f}",
-                "R (Ω)": f"{mr['r_total']:.2f}", "τ (ps)": f"{mr['effective_tau_ps']:.2f}",
-                "Via Cov": f"{mr['via_coverage']*100:.1f}", "Miss Via": mr["missing_via_count"],
-                "Sim": f"{mr['similarity_score']:.1f}",
-                "Pass": "✓" if mr["gate_pass"] else "✗",
-            })
+        # Table + dropdown + metric cards
+        rows = _build_table_rows(routing_state.batch_results)
+        style_data_conditional = _compute_table_styles(rows)
         opts = [{"label": n, "value": n} for n in routing_state.batch_net_names]
-        return fig, rows, opts, status
+        metric_cards = _build_metric_cards(routing_state.batch_results)
+        return fig, rows, style_data_conditional, opts, metric_cards, status
 
     @app.callback(
         Output("download-routing-pptx", "data"),
