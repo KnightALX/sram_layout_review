@@ -463,7 +463,7 @@ class PPTXReportGenerator:
 
         # 创建表格 - 扩展列包含时序数据
         headers = ['Net Name', 'R (Ω)', 'C (fF)', 'Length (μm)', 'Via Count',
-                   'tau_rc (ns)', 't_pd (ns)', 't_rise (ns)', 't_fall (ns)', 'Violations']
+                   'tau_rc (ps)', 't_pd (ps)', 't_rise (ps)', 't_fall (ps)', 'Violations']
         rows = len(display_data) + 1
         cols = len(headers)
 
@@ -499,10 +499,10 @@ class PPTXReportGenerator:
                 f"{row_data['Total C (fF)']:.1f}",
                 f"{row_data['Length (μm)']:.1f}",
                 str(row_data['Via Count']),
-                f"{row_data.get('tau_rc (ns)', 0):.4f}",
-                f"{row_data.get('tpd_50% (ns)', 0):.4f}",
-                f"{row_data.get('trise (ns)', 0):.4f}",
-                f"{row_data.get('tfall (ns)', 0):.4f}",
+                f"{row_data.get('tau_rc (ps)', 0):.4f}",
+                f"{row_data.get('tpd_50% (ps)', 0):.4f}",
+                f"{row_data.get('trise (ps)', 0):.4f}",
+                f"{row_data.get('tfall (ps)', 0):.4f}",
                 str(row_data['Violations'])
             ]
 
@@ -1195,8 +1195,8 @@ class PPTXReportGenerator:
                 tf.text += f"Area: {rc_data.total_area:.2f} μm²\n"
                 tf.text += f"Vias: {rc_data.via_count}\n"
                 tf.text += f"\nTiming Analysis\n"
-                tf.text += f"  τ_rc: {rc_data.tau_rc:.3f} ns\n"
-                tf.text += f"  t_pd@50%: {rc_data.tpd_50:.3f} ns"
+                tf.text += f"  τ_rc: {rc_data.tau_rc:.3f} ps\n"
+                tf.text += f"  t_pd@50%: {rc_data.tpd_50:.3f} ps"
 
                 for p_obj in tf.paragraphs:
                     p_obj.font.size = Pt(10)

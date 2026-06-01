@@ -439,8 +439,8 @@ def register_callbacks(app: Dash):
         resistance = '0 Ω'
         capacitance = '0 fF'
         length = '0 μm'
-        tau_rc = '0 ns'
-        tpd = '0 ns'
+        tau_rc = '0 ps'
+        tpd = '0 ps'
 
         if app_state.engine and hasattr(app_state.engine, 'net_rc_data'):
             if net_name in app_state.engine.net_rc_data:
@@ -448,8 +448,9 @@ def register_callbacks(app: Dash):
                 resistance = f"{rc_data.total_resistance:.2f} Ω"
                 capacitance = f"{rc_data.total_capacitance:.2f} fF"
                 length = f"{rc_data.total_length:.2f} μm"
-                tau_rc = f"{rc_data.tau_rc:.4f} ns"
-                tpd = f"{rc_data.tpd_50:.4f} ns"
+                # tau/tpd 单位: ps (1 Ω·fF = 1 ps)
+                tau_rc = f"{rc_data.tau_rc:.2f} ps"
+                tpd = f"{rc_data.tpd_50:.2f} ps"
 
         # Count violations
         critical = '0'

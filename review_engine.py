@@ -357,11 +357,13 @@ class NetRCData:
     via_count: int = 0
     layer_usage: Dict[str, int] = field(default_factory=dict)
 
-    # 时序分析
-    tau_rc: float = 0.0                 # RC时间常数 (ns) - tau = R * C
-    trise: float = 0.0                  # 信号上升时间 (ns)
-    tfall: float = 0.0                  # 信号下降时间 (ns)
-    tpd_50: float = 0.0                # 传播延迟 50% (ns)
+    # 时序分析 (单位: ps)
+    # 注意: R (Ω) × C (fF) 物理上等于 1 ps (1 Ω·fF = 10⁻¹⁵ s = 1 ps)
+    # 过去使用 1e-9 换算系数,导致结果小 6 个数量级,显示为 0.000
+    tau_rc: float = 0.0                 # RC时间常数 (ps) - tau = R * C
+    trise: float = 0.0                  # 信号上升时间 (ps)
+    tfall: float = 0.0                  # 信号下降时间 (ps)
+    tpd_50: float = 0.0                # 传播延迟 50% (ps)
 
     # 驱动/负载信息
     r_driver: float = 0.0                # Ω - 前级驱动等效电阻
@@ -711,20 +713,21 @@ class ProfessionalLayoutReviewEngine:
         如果存在poly/gate层作为后级负载，或S/D层作为前级驱动，
         会根据层类型估算R_driver和C_load。
 
+        **单位说明**：R 单位是 Ω, C 单位是 fF。
+        物理上 1 Ω·fF = 10⁻¹⁵ s = **1 ps**。
+        因此 tau/tpd 字段直接以 ps 为单位,不需要再乘换算系数。
+        (历史版本曾用 * 1e-9 把结果当作 ns,导致小 6 个数量级,显示为 0.000)
+
         Args:
             rc_data: NetRCData对象（会被直接修改）
             polygons: 该net的所有多边形
         """
-        # 单位换算
-        R_ohm = rc_data.total_resistance  # Ω
-        C_ff = rc_data.total_capacitance   # fF
+        # 单位: R=Ω, C=fF, 结果=ps
+        R_ohm = rc_data.total_resistance
+        C_ff = rc_data.total_capacitance
 
-        # 1. RC时间常数 tau_rc = R * C
-        # 结果从 Ω*fF 转换为 ns
-        # 1 Ω * 1 fF = 1e-18 F*Ω = 1e-18 J / (A^2) * (A/V) ...
-        # 实际上 1 Ω * 1 fF = 1e-18 s，但通常用 ns 作为单位
-        # 所以 tau_rc (ns) = R (Ω) * C (fF) * 1e-9
-        rc_data.tau_rc = R_ohm * C_ff * 1e-9  # ns
+        # 1. RC时间常数 tau_rc = R * C (单位: ps)
+        rc_data.tau_rc = R_ohm * C_ff  # 1 Ω·fF = 1 ps
 
         # 2. 估算 R_driver 和 C_load
         # 如果存在 poly/gate 层，它们作为后级输入贡献 C_load
@@ -760,11 +763,11 @@ class ProfessionalLayoutReviewEngine:
         rc_data.c_load = c_load
         rc_data.r_driver = r_driver
 
-        # 3. 传播延迟 tpd_50%
+        # 3. 传播延迟 tpd_50% (单位: ps)
         # tpd_50% ≈ 0.69 * (R_driver + 0.5 * R_wire) * (C_wire + C_load)
-        C_total = C_ff + c_load
-        R_total = r_driver + 0.5 * R_ohm
-        rc_data.tpd_50 = 0.69 * R_total * C_total * 1e-9  # ns
+        C_total = C_ff + c_load  # fF
+        R_total = r_driver + 0.5 * R_ohm  # Ω
+        rc_data.tpd_50 = 0.69 * R_total * C_total  # 1 Ω·fF = 1 ps
 
         # 4. 上升/下降时间
         # trise/tfall ≈ 2.2 * tau_rc (对于 10%-90%)
@@ -1657,11 +1660,11 @@ class ProfessionalLayoutReviewEngine:
                 'Via Count': rc_data.via_count,
                 'Layer Count': len(rc_data.layer_usage),
                 'Layers Used': ', '.join(rc_data.layer_usage.keys()),
-                # 时序分析
-                'tau_rc (ns)': round(rc_data.tau_rc, 4),
-                'tpd_50% (ns)': round(rc_data.tpd_50, 4),
-                'trise (ns)': round(rc_data.trise, 4),
-                'tfall (ns)': round(rc_data.tfall, 4),
+                # 时序分析 (单位: ps; 1 Ω·fF = 1 ps)
+                'tau_rc (ps)': round(rc_data.tau_rc, 4),
+                'tpd_50% (ps)': round(rc_data.tpd_50, 4),
+                'trise (ps)': round(rc_data.trise, 4),
+                'tfall (ps)': round(rc_data.tfall, 4),
             }
 
             # 添加每层细节
