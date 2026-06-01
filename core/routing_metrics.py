@@ -1,0 +1,168 @@
+"""Aggregate the 6 routing metrics for a single net and check gates."""
+from __future__ import annotations
+import re
+from typing import Dict, List, Any, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from review_engine import Polygon, Via, Point
+    from config.routing_thresholds import RoutingThresholds
+
+from core.directional_analyzer import analyze_net_directional
+from core.via_coverage import analyze_via_coverage
+from core.rc_calculator import compute_net_metrics_with_tau
+from core.golden_similarity import compare_to_golden
+
+
+def _bbox_aspect(polygons: List["Polygon"]) -> float:
+    """Overall bbox aspect ratio (max(w,h)/min(w,h)), 1.0 if empty."""
+    if not polygons:
+        return 1.0
+    xs = [p.bbox[0] for p in polygons] + [p.bbox[2] for p in polygons]
+    ys = [p.bbox[1] for p in polygons] + [p.bbox[3] for p in polygons]
+    w = max(xs) - min(xs)
+    h = max(ys) - min(ys)
+    if min(w, h) <= 0:
+        return 1.0
+    return max(w, h) / min(w, h)
+
+
+def _polygon_to_via(poly, tech_layers: Dict) -> "Via":
+    """Convert a Polygon (used as a via) into a real Via object.
+
+    Looks at the polygon's layer name (e.g. "via1") to determine the connecting
+    metals. The `resistance` is a computed property on Via (based on size),
+    so we don't need to (and can't) set it as an instance attribute.
+    """
+    from review_engine import Via, Point
+    pts = poly.points
+    cx = sum(p.x for p in pts) / len(pts)
+    cy = sum(p.y for p in pts) / len(pts)
+    layer_lower = poly.layer.lower()
+    m = re.search(r"\d+", layer_lower)
+    idx = int(m.group()) if m else 0
+    upper = f"met{idx + 1}"
+    lower = f"met{idx}"
+    size = max(p.x for p in pts) - min(p.x for p in pts)
+    return Via(
+        position=Point(cx, cy),
+        layer=poly.layer,
+        upper_metal=upper,
+        lower_metal=lower,
+        size=size,
+        net_name=poly.net_name or "",
+    )
+
+
+def _coerce_vias(vias_in, tech_layers: Dict) -> list:
+    """Accept a list of Via or Polygon; return a list of Via."""
+    from review_engine import Via
+    out = []
+    for v in vias_in:
+        if isinstance(v, Via):
+            out.append(v)
+        else:
+            out.append(_polygon_to_via(v, tech_layers))
+    return out
+
+
+def check_gates(metrics: Dict[str, Any], thresholds: "RoutingThresholds") -> Tuple[bool, List[str]]:
+    """Check all 6 metrics against thresholds. Returns (pass, fail_reasons)."""
+    reasons: List[str] = []
+    if metrics["h_ratio"] > thresholds.max_h_ratio:
+        reasons.append(f"h_ratio {metrics['h_ratio']:.2%} > max {thresholds.max_h_ratio:.2%}")
+    if metrics["v_ratio"] > thresholds.max_v_ratio:
+        reasons.append(f"v_ratio {metrics['v_ratio']:.2%} > max {thresholds.max_v_ratio:.2%}")
+    if metrics["r_total"] > thresholds.max_r_ohm:
+        reasons.append(f"R {metrics['r_total']:.2f}Ω > max {thresholds.max_r_ohm:.2f}Ω")
+    if metrics["c_total"] > thresholds.max_c_ff:
+        reasons.append(f"C {metrics['c_total']:.2f}fF > max {thresholds.max_c_ff:.2f}fF")
+    if metrics["effective_tau_ps"] > thresholds.max_tau_ps:
+        reasons.append(f"τ {metrics['effective_tau_ps']:.2f}ps > max {thresholds.max_tau_ps:.2f}ps")
+    if metrics["via_coverage"] < thresholds.min_via_coverage:
+        reasons.append(f"via coverage {metrics['via_coverage']:.2%} < min {thresholds.min_via_coverage:.2%}")
+    if metrics["similarity_score"] < thresholds.min_similarity:
+        reasons.append(f"similarity {metrics['similarity_score']:.1f} < min {thresholds.min_similarity:.1f}")
+    return (len(reasons) == 0), reasons
+
+
+def compute_for_net(
+    net_name: str,
+    polygons: List["Polygon"],
+    vias: List,
+    tech_layers: Dict,
+    thresholds: "RoutingThresholds",
+    golden_metrics: Dict[str, Any] = None,
+) -> Dict[str, Any]:
+    """Compute the unified 6-metric dict for one net.
+
+    Accepts vias as either Via objects or Polygons (Polygons are auto-converted).
+
+    Args:
+        net_name: Net name.
+        polygons: All polygons of the net.
+        vias: Via objects OR Polygons used as vias.
+        tech_layers: Tech config dict.
+        thresholds: RoutingThresholds for gate check.
+        golden_metrics: Dict with 8 FEATURE_NAMES keys, or None.
+
+    Returns:
+        Dict matching the 6-metric contract (with both `total_length` and `total_len` keys).
+    """
+    # Convert any polygon-vias to Via objects (for the rc_calculator)
+    vias_for_rc = _coerce_vias(vias or [], tech_layers)
+
+    # 1. Directional
+    dr = analyze_net_directional(polygons)
+    # 2. Via coverage (analyze_via_coverage accepts polygons)
+    vc = analyze_via_coverage(polygons, vias, min_via_per_overlap=1)
+    # 3-4. RC + tau
+    rc = compute_net_metrics_with_tau(net_name, polygons, vias_for_rc, tech_layers)
+    # 5. Similarity (only if golden given)
+    aspect = _bbox_aspect(polygons)
+    own_features = {
+        "h_ratio": dr.h_ratio,
+        "v_ratio": dr.v_ratio,
+        "total_len": rc["total_length"],
+        "via_count": rc["via_count"],
+        "r_total": rc["r_total"],
+        "c_total": rc["c_total"],
+        "effective_tau_ps": rc["effective_tau_ps"],
+        "bbox_aspect": aspect,
+    }
+    if golden_metrics:
+        sim_score, deltas = compare_to_golden(golden_metrics, own_features)
+    else:
+        sim_score, deltas = 100.0, {k: 0.0 for k in own_features}
+    # 6. Gate check
+    metrics_for_gate = {
+        **own_features,
+        "missing_via_count": vc.missing_via_count,
+        "via_coverage": vc.via_coverage,
+        "similarity_score": sim_score,
+    }
+    gate_pass, fail_reasons = check_gates(metrics_for_gate, thresholds)
+
+    return {
+        "net_name": net_name,
+        "h_len": dr.h_len,
+        "v_len": dr.v_len,
+        "h_ratio": dr.h_ratio,
+        "v_ratio": dr.v_ratio,
+        "dominant": dr.dominant,
+        "missing_via_count": vc.missing_via_count,
+        "via_coverage": vc.via_coverage,
+        "missing_locations": vc.missing_locations,
+        "r_total": rc["r_total"],
+        "c_total": rc["c_total"],
+        "rc_product": rc["rc_product"],
+        "effective_tau_ps": rc["effective_tau_ps"],
+        "total_length": rc["total_length"],
+        "total_len": rc["total_length"],   # alias for FEATURE_NAMES compatibility
+        "via_count": rc["via_count"],
+        "similarity_score": sim_score,
+        "deltas": deltas,
+        "bbox_aspect": aspect,
+        "gate_pass": gate_pass,
+        "gate_fail_reasons": fail_reasons,
+        "per_polygon_dir": dr.per_polygon,  # for visualization
+    }
