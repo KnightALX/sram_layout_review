@@ -6,9 +6,23 @@ RC Calculator - 精确的电阻电容计算
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List
 
 from review_engine import Point, Polygon, WireSegment, Via, NetRCData
+
+
+# Module-level constant: layer name aliases used across both pipelines.
+# Centralized here so a new PDK only needs to extend ONE place instead of 4
+# (was duplicated in review_engine.py x2 and this file x2).
+LAYER_ALIASES = {
+    'metal1': 'met1', 'm1': 'met1',
+    'metal2': 'met2', 'm2': 'met2',
+    'metal3': 'met3', 'm3': 'met3',
+    'metal4': 'met4', 'm4': 'met4',
+    'metal5': 'met5', 'm5': 'met5',
+    'metal6': 'met6', 'm6': 'met6',
+    'metal7': 'met7', 'm7': 'met7',
+}
 
 
 def _extract_layer_number(layer_name: str) -> int:
@@ -61,19 +75,9 @@ def parse_polygons_to_wires(
     """
     segments: List[WireSegment] = []
 
-    layer_aliases = {
-        'metal1': 'met1', 'm1': 'met1',
-        'metal2': 'met2', 'm2': 'met2',
-        'metal3': 'met3', 'm3': 'met3',
-        'metal4': 'met4', 'm4': 'met4',
-        'metal5': 'met5', 'm5': 'met5',
-        'metal6': 'met6', 'm6': 'met6',
-        'metal7': 'met7', 'm7': 'met7',
-    }
-
     for poly in polygons:
         layer_name = poly.layer.lower()
-        resolved_layer = layer_aliases.get(layer_name, layer_name)
+        resolved_layer = LAYER_ALIASES.get(layer_name, layer_name)
 
         layer_info = tech_layers.get(resolved_layer, {})
         if not layer_info:
@@ -85,7 +89,7 @@ def parse_polygons_to_wires(
             is_likely_metal = (
                 resolved_layer.startswith('met') or
                 resolved_layer.startswith('m') and resolved_layer[1:].isdigit() or
-                layer_name in layer_aliases
+                layer_name in LAYER_ALIASES
             )
             if not is_likely_metal:
                 continue
@@ -161,22 +165,12 @@ def calculate_net_rc(
     if not polygons:
         return rc_data
 
-    layer_aliases = {
-        'metal1': 'met1', 'm1': 'met1',
-        'metal2': 'met2', 'm2': 'met2',
-        'metal3': 'met3', 'm3': 'met3',
-        'metal4': 'met4', 'm4': 'met4',
-        'metal5': 'met5', 'm5': 'met5',
-        'metal6': 'met6', 'm6': 'met6',
-        'metal7': 'met7', 'm7': 'met7',
-    }
-
     wire_segments = parse_polygons_to_wires(polygons, net_name, tech_layers)
     rc_data.wire_segments = wire_segments
 
     for segment in wire_segments:
         layer_name = segment.layer.lower()
-        resolved_layer = layer_aliases.get(layer_name, layer_name)
+        resolved_layer = LAYER_ALIASES.get(layer_name, layer_name)
 
         layer_info = tech_layers.get(resolved_layer, {})
         if not layer_info:

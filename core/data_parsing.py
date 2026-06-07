@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING, Optional, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:
     # Import only for type checking, not at runtime
@@ -90,7 +90,7 @@ def parse_shape_txt(content: str, filename: str) -> Optional[tuple]:
                     try:
                         x, y = map(int, lines[i].strip().split())
                         points.append(Point_cls(x / scale, y / scale))
-                    except:
+                    except (ValueError, TypeError):
                         continue
 
                 if points:

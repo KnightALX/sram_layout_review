@@ -480,9 +480,10 @@ def register_callbacks(app: Dash):
 
     @app.callback(
         Output('export-status', 'children'),
-        [Input('btn-generate-report', 'n_clicks')]
+        [Input('btn-generate-report', 'n_clicks')],
+        [State('output-dir', 'value')]
     )
-    def generate_report(btn_clicks):
+    def generate_report(btn_clicks, output_dir_input):
         """Generate PPTX and PDF reports."""
         ctx = callback_context
         if not ctx.triggered:
@@ -497,18 +498,28 @@ def register_callbacks(app: Dash):
         if not app_state.review_completed:
             return html.Div("Please run a review first before generating reports.", className="alert alert-warning")
 
+        # Resolve output directory with fallback to ./output, guard against path traversal
+        output_dir = (output_dir_input or "").strip() or "./output"
+        if ".." in os.path.normpath(output_dir).split(os.sep):
+            return html.Div(
+                "Error: Output directory cannot contain '..'",
+                className="alert alert-danger"
+            )
+
         try:
             from report_generator import generate_reports
 
             pptx_path, pdf_path = generate_reports(
                 app_state.engine,
-                "./output",
+                output_dir,
                 base_name="layout_review_report"
             )
 
+            abs_path = os.path.abspath(output_dir)
             status = html.Div([
                 html.H5("Reports Generated Successfully!", className="alert-heading"),
                 html.Hr(),
+                html.P(f"Output directory: {abs_path}"),
                 html.P(f"PPTX: {pptx_path}"),
                 html.P(f"PDF: {pdf_path}" if pdf_path else "PDF: Not available (reportlab required)"),
             ], className="alert alert-success")

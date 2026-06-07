@@ -179,6 +179,8 @@ pip install -r requirements.txt
 python3 layout_review_app.py 8050
 ```
 
+> **Windows 用户**：`./start.sh` 需要 Git Bash 或 WSL；或者直接用 `python layout_review_app.py 8050`（注意是 `python` 而非 `python3`）。
+
 ### 3. 访问界面
 
 打开浏览器 → **http://localhost:8050**
@@ -359,9 +361,9 @@ python tests/run_tests.py --all
 
 ### 端到端测试 3 件套 (`tests/test_routing_e2e.py`)
 
-- `test_wordline_wl_preset_h_dominant_passes` — WL preset + H-dominant net → 软 h_ratio 被相似度绕过 → pass
-- `test_io_bl_preset_v_dominant_passes` — IO/BL preset + V-dominant net → 同上
-- `test_long_wire_fails_tau_gate` — 长走线超过 τ 上限 → HARD 违例 → fail
+- `test_wordline_wl_preset_h_dominant_passes` — WL preset (max_v=1.0) + V-dominant net (5μm 垂直) → 软 h_ratio 违例被相似度绕过 → pass
+- `test_io_bl_preset_v_dominant_passes` — IO/BL preset (max_h=1.0) + H-dominant net (5μm 水平) → 同上
+- `test_long_wire_fails_tau_gate` — 1000μm 长走线超过 τ 上限 → HARD 违例 → fail
 
 ---
 

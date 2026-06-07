@@ -245,7 +245,7 @@ class LayerColorManager:
                     r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
                     if self._color_distance(rgb, (r, g, b)) < min_distance:
                         return True
-            except:
+            except (ValueError, IndexError):
                 continue
 
         for used_rgb in self.used_rgb_colors:
@@ -318,7 +318,7 @@ class LayerColorManager:
                     g = int(g * 0.6)
                     b = int(b * 0.6)
                     VIA_STROKE_COLORS[layer_name] = f'rgba({r}, {g}, {b}, 1.0)'
-            except:
+            except (ValueError, IndexError):
                 VIA_STROKE_COLORS[layer_name] = 'rgba(50, 50, 50, 1.0)'
 
         return new_color

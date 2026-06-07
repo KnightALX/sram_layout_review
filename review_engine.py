@@ -502,112 +502,25 @@ class ProfessionalLayoutReviewEngine:
     def parse_polygons_to_wires(self, net_name: str) -> List[WireSegment]:
         """将多边形解析为走线段 - 用于RC计算。
 
+        Delegates to core.rc_calculator.parse_polygons_to_wires (the canonical
+        implementation). Lazy import avoids a circular dependency at module
+        load time (rc_calculator imports from this module).
+
         Args:
             net_name: net名称
 
         Returns:
             WireSegment列表，用于RC计算
         """
-        polygons = self.nets.get(net_name, [])
-        segments = []
+        from core.rc_calculator import parse_polygons_to_wires as _parse
+        return _parse(self.nets.get(net_name, []), net_name, self.tech.layers)
 
-        # 层类型别名映射：处理常见的命名差异
-        # 例如 'metal1' -> 'met1', 'm1' -> 'met1'
-        layer_aliases = {
-            'metal1': 'met1', 'm1': 'met1',
-            'metal2': 'met2', 'm2': 'met2',
-            'metal3': 'met3', 'm3': 'met3',
-            'metal4': 'met4', 'm4': 'met4',
-            'metal5': 'met5', 'm5': 'met5',
-            'metal6': 'met6', 'm6': 'met6',
-            'metal7': 'met7', 'm7': 'met7',
-        }
-
-        for poly in polygons:
-            layer_name = poly.layer.lower()
-            resolved_layer = layer_aliases.get(layer_name, layer_name)
-
-            # 获取层信息（尝试别名后的层名）
-            layer_info = self.tech.layers.get(resolved_layer, {})
-
-            # 如果仍然没有，尝试原始层名
-            if not layer_info:
-                layer_info = self.tech.layers.get(poly.layer, {})
-
-            # 确定层的实际类型
-            layer_type = layer_info.get('type', '')
-
-            # 只处理metal层，但也要处理未定义的metal-like层
-            # 对于未定义的层，假设它是metal（提供合理的默认值）
-            if layer_type != 'metal':
-                # 检查是否是未定义的metal层（通过别名或常见命名模式）
-                is_likely_metal = (
-                    resolved_layer.startswith('met') or
-                    resolved_layer.startswith('m') and resolved_layer[1:].isdigit() or
-                    layer_name in layer_aliases
-                )
-
-                if not is_likely_metal:
-                    # 对于via、poly、active等非金属层，不提取为wire segment
-                    continue
-
-                # 对于未定义的metal-like层，使用默认参数
-                layer_info = {
-                    'type': 'metal',
-                    'min_width': 0.032,
-                    'resistance_per_sq': 0.15,
-                    'capacitance_per_um': 0.20,
-                }
-
-            # 从多边形提取走线中心线
-            points = poly.points
-            if len(points) < 2:
-                continue
-
-            # 简化：对于矩形，提取中心线
-            if poly.is_rectangular and len(points) >= 4:
-                bbox = poly.bbox
-                if poly.width > poly.height:
-                    # 水平走线
-                    y_center = (bbox[1] + bbox[3]) / 2
-                    segment = WireSegment(
-                        start=Point(bbox[0], y_center),
-                        end=Point(bbox[2], y_center),
-                        layer=poly.layer,
-                        width=poly.height,
-                        net_name=net_name
-                    )
-                else:
-                    # 垂直走线
-                    x_center = (bbox[0] + bbox[2]) / 2
-                    segment = WireSegment(
-                        start=Point(x_center, bbox[1]),
-                        end=Point(x_center, bbox[3]),
-                        layer=poly.layer,
-                        width=poly.width,
-                        net_name=net_name
-                    )
-                segments.append(segment)
-            else:
-                # 复杂多边形：提取边
-                for i in range(len(points) - 1):
-                    seg_length = points[i].distance_to(points[i+1])
-                    if seg_length > 0.01:  # 忽略太短的边
-                        # 估算宽度
-                        width = poly.area / poly.perimeter * 2 if poly.perimeter > 0 else 0.032
-                        segment = WireSegment(
-                            start=points[i],
-                            end=points[i+1],
-                            layer=poly.layer,
-                            width=max(width, layer_info.get('min_width', 0.032)),
-                            net_name=net_name
-                        )
-                        segments.append(segment)
-
-        return segments
-    
     def calculate_net_rc(self, net_name: str) -> NetRCData:
         """计算net的RC参数。
+
+        Delegates the pure RC math to core.rc_calculator, then adds the
+        legacy-only timing analysis (_calculate_timing_metrics) and stores
+        the result in self.net_rc_data for the right-panel Properties view.
 
         Args:
             net_name: net名称
@@ -615,89 +528,15 @@ class ProfessionalLayoutReviewEngine:
         Returns:
             NetRCData包含RC计算结果
         """
-        rc_data = NetRCData(net_name=net_name)
+        from core.rc_calculator import calculate_net_rc as _calc_rc
+
         polygons = self.nets.get(net_name, [])
+        vias = self.vias.get(net_name, [])
+        rc_data = _calc_rc(net_name, polygons, vias, self.tech.layers)
 
-        if not polygons:
-            return rc_data
-
-        # 解析为走线段
-        wire_segments = self.parse_polygons_to_wires(net_name)
-        rc_data.wire_segments = wire_segments
-
-        # 层类型别名映射（与parse_polygons_to_wires保持一致）
-        layer_aliases = {
-            'metal1': 'met1', 'm1': 'met1',
-            'metal2': 'met2', 'm2': 'met2',
-            'metal3': 'met3', 'm3': 'met3',
-            'metal4': 'met4', 'm4': 'met4',
-            'metal5': 'met5', 'm5': 'met5',
-            'metal6': 'met6', 'm6': 'met6',
-            'metal7': 'met7', 'm7': 'met7',
-        }
-
-        # 计算每层的RC
-        for segment in wire_segments:
-            # 尝试解析层名（支持别名）
-            layer_name = segment.layer.lower()
-            resolved_layer = layer_aliases.get(layer_name, layer_name)
-
-            # 获取层信息
-            layer_info = self.tech.layers.get(resolved_layer, {})
-
-            # 如果仍然没有，尝试原始层名
-            if not layer_info:
-                layer_info = self.tech.layers.get(segment.layer, {})
-
-            # 如果仍然没有，使用默认参数
-            if not layer_info:
-                layer_info = {
-                    'resistance_per_sq': 0.15,  # 默认值
-                    'capacitance_per_um': 0.20,
-                    'min_width': 0.032,
-                }
-
-            r_per_sq = layer_info.get('resistance_per_sq', 0.15)
-            c_per_um = layer_info.get('capacitance_per_um', 0.20)
-            
-            # 电阻
-            r = segment.resistance(r_per_sq)
-            rc_data.total_resistance += r
-
-            # 电容计算
-            # 总电容 = 对地电容 + 耦合电容
-            # 简化模型：假设70%是对地电容，30%是相邻走线耦合电容
-            # 实际比例取决于走线密度、层间距、介电常数等
-            # 这是FinFET工艺下的典型近似值（ITRS路线图数据）
-            c = segment.capacitance(c_per_um)
-            rc_data.total_capacitance += c
-            rc_data.ground_capacitance += c * 0.7  # 70%对地 (典型值)
-            rc_data.coupling_capacitance += c * 0.3  # 30%耦合 (典型值)
-
-            # 层统计
-            if segment.layer not in rc_data.layer_resistances:
-                rc_data.layer_resistances[segment.layer] = 0
-                rc_data.layer_capacitances[segment.layer] = 0
-                rc_data.layer_usage[segment.layer] = 0
-            
-            rc_data.layer_resistances[segment.layer] += r
-            rc_data.layer_capacitances[segment.layer] += c
-            rc_data.layer_usage[segment.layer] += 1
-            
-            rc_data.total_length += segment.length
-        
-        # 添加通孔电阻
-        for via in self.vias.get(net_name, []):
-            rc_data.total_resistance += via.resistance
-            rc_data.via_count += 1
-
-        # 总面积
-        rc_data.total_area = sum(p.area for p in polygons)
-
-        # ============================================
-        # 时序分析计算
-        # ============================================
-        self._calculate_timing_metrics(rc_data, polygons)
+        # Legacy pipeline adds timing metrics on top of pure RC
+        if polygons:
+            self._calculate_timing_metrics(rc_data, polygons)
 
         self.net_rc_data[net_name] = rc_data
         return rc_data
@@ -1686,49 +1525,9 @@ class ProfessionalLayoutReviewEngine:
 # 便捷函数
 # ============================================================================
 
-import re
 
-
-def _extract_layer_number(layer_name: str) -> int:
-    """Extract layer number from layer name using robust regex.
-
-    Handles patterns like:
-    - 'met1', 'met2', 'metal1', 'metal2' -> 1, 2
-    - 'via0', 'via1', 'via2' -> 0, 1, 2
-    - 'm1', 'm2' -> 1, 2
-    - 'poly', 'active' (no number) -> 0 as default
-
-    Args:
-        layer_name: Layer name string
-
-    Returns:
-        Layer number as integer, defaults to 0 if no number found
-    """
-    if not layer_name:
-        return 0
-
-    layer_lower = layer_name.lower()
-
-    # Pattern to find trailing digits: met1, metal1, via1, m1, etc.
-    # Matches: optional prefix (met/metal/via/m) followed by digits at end
-    patterns = [
-        r'met(\d+)$',      # met1, met2
-        r'metal(\d+)$',   # metal1, metal2
-        r'via(\d+)$',     # via0, via1
-        r'^(\d+)$',       # just a number
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, layer_lower)
-        if match:
-            return int(match.group(1))
-
-    # Fallback: try to find ANY digits in the string
-    digits_match = re.search(r'(\d+)', layer_lower)
-    if digits_match:
-        return int(digits_match.group(1))
-
-    return 0  # Default for layers without numbers (poly, active, etc.)
+# Note: _extract_layer_number was removed (it lived here unused);
+# the canonical implementation is now core.rc_calculator._extract_layer_number.
 
 
 def create_engine(config: LayoutReviewConfig = None) -> ProfessionalLayoutReviewEngine:

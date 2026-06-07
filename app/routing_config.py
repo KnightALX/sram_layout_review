@@ -37,7 +37,16 @@ def get_threshold_input_ids() -> List[str]:
 
 
 def _preset_options():
-    return [{"label": name, "value": name} for name in list_yaml_presets()]
+    # YAML presets + code-only built-in presets (e.g. power_relaxed, which has
+    # no YAML file). `_BUILTIN_PRESETS` is a known private symbol of
+    # config.routing_thresholds; we use it locally rather than add a new
+    # public list_builtin_presets() API.
+    yaml_names = set(list_yaml_presets())
+    from config.routing_thresholds import _BUILTIN_PRESETS
+    code_only = sorted(set(_BUILTIN_PRESETS.keys()) - yaml_names)
+    options = [{"label": n, "value": n} for n in sorted(yaml_names)]
+    options.extend({"label": f"{n} (built-in)", "value": n} for n in code_only)
+    return options
 
 
 def _resolve_regex(pattern: str) -> tuple[Optional[re.Pattern], List[str], Optional[str]]:
@@ -93,6 +102,14 @@ def _regex_match_preview(pattern: str, label: str) -> html.Div:
             f"⚠ matches 0 of {len(app_state.nets_data)} loaded nets",
             style={"fontSize": "10px", "color": "#E67E22", "marginTop": "4px"}
         )
+    # Golden regex must match exactly one net (we use the first match); warn
+    # the user if their pattern is too loose.
+    if label == "Golden" and len(matches) > 1:
+        return html.Div(
+            f"⚠ Golden regex matches {len(matches)} nets — only the first "
+            f"({matches[0]!r}) will be used. Use ^name$ for exact match.",
+            style={"fontSize": "10px", "color": "#E67E22", "marginTop": "4px"}
+        )
     preview = ", ".join(matches[:3]) + (f" … (+{len(matches) - 3})" if len(matches) > 3 else "")
     return html.Div(
         f"✓ {label}: matches {len(matches)} net(s) — {preview}",
@@ -144,21 +161,37 @@ def create_routing_config_tab():
 
         # Threshold sliders
         html.Div([
-            html.Div("Routing Thresholds", className="card-header"),
             html.Div([
+                html.Span("Routing Thresholds", style={"flex": "1"}),
+                html.Span(id="thresh-unsaved-badge",
+                          style={"fontSize": "10px", "color": "#E67E22",
+                                 "fontWeight": "600", "display": "none"}),
+            ], className="card-header"),
+            html.Div([
+                # Grid of threshold inputs
                 html.Div([
-                    html.Label(label, className="form-label"),
-                    dcc.Input(
-                        id=f"thresh-{name}",
-                        type="number",
-                        value=getattr(thr, name),
-                        min=mn, max=mx, step=st,
-                        className="input-field",
-                    ),
-                ], className="form-group")
-                for (name, label, mn, mx, st) in THRESHOLD_FIELDS
-            ], className="card-body",
-               style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px"}),
+                    html.Div([
+                        html.Label(label, className="form-label"),
+                        dcc.Input(
+                            id=f"thresh-{name}",
+                            type="number",
+                            value=getattr(thr, name),
+                            min=mn, max=mx, step=st,
+                            className="input-field",
+                        ),
+                    ], className="form-group")
+                    for (name, label, mn, mx, st) in THRESHOLD_FIELDS
+                ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px"}),
+                # Apply button + status
+                html.Div([
+                    html.Button("✓ Apply Thresholds", id="btn-apply-thresholds",
+                                className="btn btn-primary",
+                                style={"marginTop": "12px", "width": "100%",
+                                       "minHeight": "32px", "fontWeight": "600"}),
+                    html.Div(id="thresh-apply-status",
+                             style={"fontSize": "11px", "marginTop": "6px"}),
+                ]),
+            ], className="card-body"),
         ], className="card", style={"marginBottom": "16px"}),
 
         # Golden / Batch regex
@@ -296,29 +329,8 @@ def register_routing_config_callbacks(app):
         status = _run_and_status()
         return routing_state.batch_regex, "tab-routing-review", status
 
-    # --- 3. "Run Routing Review" — runs review AND navigates to the
-    #         Routing Review tab so the user sees results. We add a new
-    #         Output to `tabs.value`; `prevent_initial_call=True` +
-    #         gating on the trigger avoids any circular re-render. The
-    #         existing routing_review.py callback also fires on this click
-    #         and re-runs the review (idempotent) to update viz/table. ---
-    @app.callback(
-        [Output("tabs", "value", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True)],
-        Input("btn-run-routing-review", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def _run_review_and_navigate(_n):
-        ctx_trigger = (
-            dash_ctx.triggered[0]["prop_id"].split(".")[0]
-            if dash_ctx.triggered else None
-        )
-        if ctx_trigger != "btn-run-routing-review":
-            return no_update, no_update
-        if not app_state.nets_data:
-            return no_update, no_update
-        status = _run_and_status()
-        return "tab-routing-review", status
+    # --- "Run Routing Review" button handling moved to app/routing_review.py
+    #     (single callback owns both: run + tab navigation + result rendering). ---
 
     # --- 4. Mirror regex inputs into routing_state so _run_routing_review()
     #         sees the latest values (the quick-fill buttons above also set
@@ -337,12 +349,15 @@ def register_routing_config_callbacks(app):
         # otherwise blank the run status on quick-fill clicks.
         return no_update
 
-    # --- 4. Preset switch + threshold validation (unchanged behaviour,
-    #         plus hooks to the new inputs to prevent the preview refresh from
-    #         killing thresh values) ---
+    # --- 4. Preset switch → reload thresholds immediately (presets should
+    #         apply instantly — only manual threshold edits require Apply).
+    #         Also hooks thresh-* inputs to prevent the preview refresh from
+    #         killing thresh values. ---
     @app.callback(
         [Output("routing-preset-status", "children", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True)]
+         Output("routing-config-status", "children", allow_duplicate=True),
+         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
+         Output("thresh-apply-status", "children", allow_duplicate=True)]
         + [Output(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
         [Input("routing-preset", "value")]
         + [Input(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
@@ -352,31 +367,93 @@ def register_routing_config_callbacks(app):
         ctx = dash_ctx
         trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
 
-        # Preset switch → reload thresholds
+        # Preset switch → reload thresholds into state AND inputs immediately.
         if trigger == "routing-preset" and preset:
             try:
-                t = load_preset_yaml(preset)
+                from config.routing_thresholds import _BUILTIN_PRESETS
+                if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
+                    t = RoutingThresholds.for_preset(preset)  # code-only path
+                else:
+                    t = load_preset_yaml(preset)  # YAML path
                 routing_state.current_preset = preset
                 routing_state.thresholds = t
                 routing_state.custom_thresholds = None
                 status = f"Loaded preset: {preset}"
                 thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
-                return [status, ""] + thresh_outputs
+                return [status, "", html.Span("", style={"display": "none"}), ""] + thresh_outputs
             except Exception as e:
-                return [f"Error: {e}", ""] + list(thresh_values)
+                return [f"Error: {e}", "", html.Span("", style={"display": "none"}), ""] + list(thresh_values)
 
-        # Update custom thresholds
+        # Manual threshold edit → validate UI only, do NOT commit to state.
+        # Show "unsaved changes" badge so the user knows to click Apply.
+        current = routing_state.get_thresholds()
+        tentative_dict = current.to_dict()
         for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
-            if val is not None and routing_state.custom_thresholds is None:
-                routing_state.custom_thresholds = RoutingThresholds.from_dict(
-                    routing_state.thresholds.to_dict()
-                )
-            if val is not None and routing_state.custom_thresholds is not None:
-                setattr(routing_state.custom_thresholds, name, val)
+            if val is not None:
+                tentative_dict[name] = val
         try:
-            routing_state.custom_thresholds and routing_state.custom_thresholds.validate()
+            tentative = RoutingThresholds.from_dict(tentative_dict)
+            tentative.validate()
+            # Validation passed — show unsaved badge, keep inputs as-is
+            return [
+                f"Loaded: {routing_state.current_preset}",
+                "",
+                html.Span("● unsaved changes", style={
+                    "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+                html.Span("Thresholds modified — click Apply to save.",
+                          style={"fontSize": "10px", "color": "#E67E22"}),
+            ] + list(thresh_values)
         except Exception as e:
-            return [f"Loaded: {routing_state.current_preset}",
-                    f"Invalid: {e}"] + list(thresh_values)
+            # Invalid values — snap back to last-known-good, show error
+            safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
+            return [
+                f"Loaded: {routing_state.current_preset}",
+                f"Invalid: {e} (reverted)",
+                html.Span("", style={"display": "none"}),
+                html.Span(f"Invalid: {e}", style={"fontSize": "10px", "color": "#C0392B"}),
+            ] + safe_values
 
-        return [f"Loaded: {routing_state.current_preset}", ""] + list(thresh_values)
+    # --- 5. Apply Thresholds button — validates and commits to routing_state ---
+    @app.callback(
+        [Output("thresh-apply-status", "children", allow_duplicate=True),
+         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
+         Output("routing-config-status", "children", allow_duplicate=True)]
+        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
+        Input("btn-apply-thresholds", "n_clicks"),
+        [State(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
+        prevent_initial_call=True,
+    )
+    def _apply_thresholds(_n, *thresh_values):
+        current = routing_state.get_thresholds()
+        tentative_dict = current.to_dict()
+        for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
+            if val is not None:
+                tentative_dict[name] = val
+        try:
+            tentative = RoutingThresholds.from_dict(tentative_dict)
+            tentative.validate()
+        except Exception as e:
+            safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
+            return (
+                [html.Span(f"✗ Apply failed: {e}", style={"fontSize": "11px", "color": "#C0392B"}),
+                 html.Span("● unsaved changes", style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+                 f"Apply failed: {e}"]
+                + safe_values
+            )
+
+        # Commit to routing_state
+        if routing_state.custom_thresholds is None:
+            routing_state.custom_thresholds = RoutingThresholds.from_dict(
+                routing_state.thresholds.to_dict()
+            )
+        for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
+            if val is not None:
+                setattr(routing_state.custom_thresholds, name, val)
+
+        return (
+            [html.Span("✓ Thresholds applied successfully.",
+                       style={"fontSize": "11px", "color": "#27AE60", "fontWeight": "600"}),
+             html.Span("", style={"display": "none"}),
+             f"Thresholds applied (preset: {routing_state.current_preset})"]
+            + list(thresh_values)
+        )

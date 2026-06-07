@@ -129,6 +129,41 @@ def check_gates(metrics: Dict[str, Any], thresholds: "RoutingThresholds",
     return True, []
 
 
+def _empty_result(net_name: str, reason: str) -> Dict[str, Any]:
+    """Build a complete result dict for a net that has no polygons.
+
+    Returned with `status="no_data"` and `gate_pass=False` so that the UI
+    can distinguish "explicitly failed analysis" from "silently passed all
+    gates because every value is zero". Every numeric field is populated
+    so downstream code that doesn't check `status` still gets stable types.
+    """
+    return {
+        "net_name": net_name,
+        "status": "no_data",
+        "h_len": 0.0,
+        "v_len": 0.0,
+        "h_ratio": 0.0,
+        "v_ratio": 0.0,
+        "dominant": "none",
+        "missing_via_count": 0,
+        "via_coverage": 0.0,
+        "missing_locations": [],
+        "r_total": 0.0,
+        "c_total": 0.0,
+        "rc_product": 0.0,
+        "effective_tau_ps": 0.0,
+        "total_length": 0.0,
+        "total_len": 0.0,
+        "via_count": 0,
+        "similarity_score": 0.0,
+        "deltas": {},
+        "bbox_aspect": 1.0,
+        "gate_pass": False,
+        "gate_fail_reasons": [reason],
+        "per_polygon_dir": [],
+    }
+
+
 def compute_for_net(
     net_name: str,
     polygons: List["Polygon"],
@@ -150,8 +185,18 @@ def compute_for_net(
         golden_metrics: Dict with 8 FEATURE_NAMES keys, or None.
 
     Returns:
-        Dict matching the 6-metric contract (with both `total_length` and `total_len` keys).
+        Dict matching the 6-metric contract (with both `total_length` and
+        `total_len` keys). Includes `status` field:
+        - "ok": normal analysis result
+        - "no_data": net had no polygons; `gate_pass=False` to avoid silent
+          false positives (see _empty_result above)
     """
+    # Guard: empty net must NOT silently pass all gates. A net that failed
+    # to parse / has no shapes is a real problem the user needs to see, not
+    # a "0Ω, 0fF, 100% similarity" virtual pass.
+    if not polygons:
+        return _empty_result(net_name, "empty net: no polygons to analyze")
+
     # Convert any polygon-vias to Via objects (for the rc_calculator)
     vias_for_rc = _coerce_vias(vias or [], tech_layers)
 
@@ -190,6 +235,7 @@ def compute_for_net(
 
     return {
         "net_name": net_name,
+        "status": "ok",
         "h_len": dr.h_len,
         "v_len": dr.v_len,
         "h_ratio": dr.h_ratio,
