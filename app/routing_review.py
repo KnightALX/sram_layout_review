@@ -513,6 +513,10 @@ def _run_routing_review():
 
     tech_layers = app_state.config.tech_config.layers
     thresholds = routing_state.get_thresholds()
+    # RC Prediction Tab: pull the active RC model (custom override or
+    # built-in default).  When the user has applied a custom config, this
+    # propagates into every per-net R / C / τ computation below.
+    rc_model = routing_state.get_rc_model()
 
     # Compute golden first (if present)
     golden_metrics = None
@@ -523,7 +527,7 @@ def _run_routing_review():
         g_polys = g_data.get("polygons", [])
         g_vias = []  # to be populated when Via support is wired up
         m = compute_for_net(golden_name, g_polys, g_vias, tech_layers, thresholds,
-                            golden_metrics=None)
+                            golden_metrics=None, rc_model=rc_model)
         golden_metrics = {k: m[k] for k in ("h_ratio", "v_ratio", "total_len", "via_count",
                                             "r_total", "c_total", "effective_tau_ps", "bbox_aspect")}
         routing_state.golden_net_name = golden_name
@@ -543,7 +547,7 @@ def _run_routing_review():
         polys = data.get("polygons", [])
         vias = []
         m = compute_for_net(name, polys, vias, tech_layers, thresholds,
-                            golden_metrics=golden_metrics)
+                            golden_metrics=golden_metrics, rc_model=rc_model)
         m["violations"] = [vv.to_dict() for vv in _compute_violations_for_net(m, thresholds)]
         routing_state.batch_results[name] = m
 

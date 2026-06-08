@@ -534,5 +534,7 @@ def register_callbacks(app: Dash):
     # ---------------------------------------------------------------------
     from app.routing_config import register_routing_config_callbacks
     from app.routing_review import register_routing_review_callbacks
+    from app.rc_prediction import register_rc_prediction_callbacks
     register_routing_config_callbacks(app)
     register_routing_review_callbacks(app)
+    register_rc_prediction_callbacks(app)

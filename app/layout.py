@@ -8,6 +8,7 @@ Uses dcc.Tabs for proper callback integration.
 from dash import html, dcc
 from app.routing_config import create_routing_config_tab
 from app.routing_review import create_routing_review_tab
+from app.rc_prediction import create_rc_prediction_tab
 
 
 def create_layout():
@@ -24,7 +25,9 @@ def create_layout():
         _create_header_bar(),
 
         # Main Content with Tabs
-        dcc.Tabs(id='tabs', value='tab-view', children=[
+        dcc.Tabs(id='tabs', value='tab-rc-prediction', children=[
+            dcc.Tab(label='RC Prediction', value='tab-rc-prediction',
+                    children=create_rc_prediction_tab()),
             dcc.Tab(label='Layout View', value='tab-view', children=_create_layout_view_content()),
             dcc.Tab(label='Routing Config', value='tab-routing-config',
                     children=create_routing_config_tab()),

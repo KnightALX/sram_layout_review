@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from config.routing_thresholds import RoutingThresholds
+from app.rc_model import RCModelConfig
 
 
 @dataclass
@@ -31,11 +32,22 @@ class RoutingState:
     batch_results: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     # batch_results: net_name -> 6-metric dict (from core.routing_metrics.compute_for_net)
 
+    # ---- RC prediction model ---------------------------------------------
+    # The default config matches the 7nm FinFET stack.  Callers that have
+    # applied a custom config (via the RC Prediction tab) will populate
+    # `custom_rc_model`; `get_rc_model()` returns whichever is active.
+    rc_model: RCModelConfig = field(default_factory=RCModelConfig)
+    custom_rc_model: Optional[RCModelConfig] = None
+
     review_completed: bool = False
     last_error: Optional[str] = None
 
     def get_thresholds(self) -> RoutingThresholds:
         return self.custom_thresholds or self.thresholds
+
+    def get_rc_model(self) -> RCModelConfig:
+        """Return the active RC model (custom override or built-in default)."""
+        return self.custom_rc_model or self.rc_model
 
     def reset_review(self):
         self.golden_net_name = ""

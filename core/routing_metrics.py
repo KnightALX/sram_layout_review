@@ -171,6 +171,7 @@ def compute_for_net(
     tech_layers: Dict,
     thresholds: "RoutingThresholds",
     golden_metrics: Dict[str, Any] = None,
+    rc_model: "RCModelConfig | None" = None,
 ) -> Dict[str, Any]:
     """Compute the unified 6-metric dict for one net.
 
@@ -183,6 +184,10 @@ def compute_for_net(
         tech_layers: Tech config dict.
         thresholds: RoutingThresholds for gate check.
         golden_metrics: Dict with 8 FEATURE_NAMES keys, or None.
+        rc_model: Optional RCModelConfig.  When provided, R/C/tau are
+            computed using the user's process / EDA parameters (from the
+            RC Prediction Tab).  When None, the legacy `tech_layers` path
+            is used.
 
     Returns:
         Dict matching the 6-metric contract (with both `total_length` and
@@ -204,8 +209,11 @@ def compute_for_net(
     dr = analyze_net_directional(polygons)
     # 2. Via coverage (analyze_via_coverage accepts polygons)
     vc = analyze_via_coverage(polygons, vias, min_via_per_overlap=1)
-    # 3-4. RC + tau
-    rc = compute_net_metrics_with_tau(net_name, polygons, vias_for_rc, tech_layers)
+    # 3-4. RC + tau (uses rc_model if provided, else legacy tech_layers)
+    rc = compute_net_metrics_with_tau(
+        net_name, polygons, vias_for_rc, tech_layers,
+        rc_model=rc_model,
+    )
     # 5. Similarity (only if golden given)
     aspect = _bbox_aspect(polygons)
     own_features = {
