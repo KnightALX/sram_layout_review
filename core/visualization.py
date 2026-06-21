@@ -523,10 +523,11 @@ def create_net_visualization(selected_nets: List[str], mode: str = 'auto_fit') -
     visible_count = len(app_state.visible_layers) if app_state.visible_layers is not None else 0
     total_layers = len(unique_layers)
 
+    nets_label = ", ".join(selected_nets) if len(selected_nets) <= 3 else f"{len(selected_nets)} nets"
     if visible_count == 0:
-        title_text = f"Layout View - {len(selected_nets)} Net(s), No Layers Visible"
+        title_text = f"Layout View - {nets_label}, No Layers Visible"
     else:
-        title_text = f"Layout View - {len(selected_nets)} Net(s), {visible_count}/{total_layers} Layer(s)"
+        title_text = f"Layout View - {nets_label}, {visible_count}/{total_layers} Layer(s)"
 
     fig.update_layout(
         title=dict(

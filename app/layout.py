@@ -167,7 +167,7 @@ def _create_left_sidebar():
                 dcc.Input(
                     id='net-filter',
                     type='text',
-                    placeholder='Filter nets...',
+                    placeholder='Filter: ^report_32x128/ or trk_dbl_sa',
                     className='input-field',
                     style={'marginBottom': '8px'},
                 ),
