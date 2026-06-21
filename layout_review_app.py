@@ -17,7 +17,7 @@ import os
 import sys
 
 # Third-party imports
-from dash import Dash
+from dash import Dash, Input, Output
 
 from app.callbacks import register_callbacks
 from app.layout import create_layout
@@ -59,6 +59,20 @@ def create_app() -> Dash:
 
     # Register all callbacks
     register_callbacks(app)
+
+    app.clientside_callback(
+        """
+        function(n) {
+            if (!window._folderUploadPayload) return window.dash_clientside.no_update;
+            const p = window._folderUploadPayload;
+            window._folderUploadPayload = null;
+            return p;
+        }
+        """,
+        Output("folder-upload-payload", "data"),
+        Input("folder-upload-trigger", "n_clicks"),
+        prevent_initial_call=True,
+    )
 
     return app
 

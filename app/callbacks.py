@@ -110,6 +110,7 @@ def register_callbacks(app: Dash):
          Output('nets-meta-store', 'data')],
         [Input('upload-data', 'contents'),
          Input('upload-yaml', 'contents'),
+         Input('folder-upload-payload', 'data'),
          Input('net-filter', 'value'),
          Input('btn-select-all', 'n_clicks'),
          Input('btn-clear', 'n_clicks')],
@@ -117,7 +118,7 @@ def register_callbacks(app: Dash):
          State('upload-yaml', 'filename')],
         prevent_initial_call=True
     )
-    def update_net_selector(contents, yaml_content, filter_text, select_all, clear,
+    def update_net_selector(contents, yaml_content, folder_payload, filter_text, select_all, clear,
                             filenames, yaml_filename):
         """Update net selector - handles file upload, YAML batch import, filtering, select all/clear."""
         ctx = callback_context
@@ -147,6 +148,41 @@ def register_callbacks(app: Dash):
                             overwritten += 1
                 except Exception as e:
                     print(f"Error importing {filename}: {e}")
+
+            if app_state.nets_data:
+                _rebuild_engine_from_nets()
+
+            status = f"Imported {imported} files"
+            if overwritten:
+                status += f" ({overwritten} overwritten)"
+            options = [{'label': name, 'value': name} for name in
+                       sorted(app_state.nets_data.keys(), key=natural_sort_key)]
+
+            return status, "", options, [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
+
+        # Handle folder upload (webkitRelativePath for source derivation)
+        if trigger_id == 'folder-upload-payload':
+            if not folder_payload or not isinstance(folder_payload, list):
+                raise PreventUpdate
+
+            imported = 0
+            overwritten = 0
+            for item in folder_payload:
+                try:
+                    content = item.get('contents', '')
+                    relative_path = item.get('relativePath', '')
+                    content_type, content_string = content.split(',')
+                    decoded = base64.b64decode(content_string).decode('utf-8')
+                    record = _record_from_uploaded_txt(
+                        decoded, relative_path, relative_path=relative_path
+                    )
+                    if record:
+                        _, ow = _store_net_entry(record)
+                        imported += 1
+                        if ow:
+                            overwritten += 1
+                except Exception as e:
+                    print(f"Error importing {item.get('relativePath', '?')}: {e}")
 
             if app_state.nets_data:
                 _rebuild_engine_from_nets()

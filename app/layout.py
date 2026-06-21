@@ -131,6 +131,16 @@ def _create_left_sidebar():
                     ], className='upload-area'),
                     multiple=True,
                 ),
+                html.Label(
+                    [
+                        html.Span("+ Select Folder", className="tree-item"),
+                    ],
+                    id="folder-upload-label",
+                    className="upload-area",
+                    style={"marginTop": "8px", "cursor": "pointer"},
+                ),
+                dcc.Store(id="folder-upload-payload"),
+                html.Button(id="folder-upload-trigger", style={"display": "none"}, n_clicks=0),
                 html.Div([
                     html.Span('YAML Config', className='text-muted', style={'fontSize': '10px', 'marginTop': '8px', 'display': 'block'}),
                     dcc.Upload(
