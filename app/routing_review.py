@@ -17,6 +17,17 @@ from core.routing_metrics import compute_for_net, split_metal_via_polygons
 from core.routing_violation import RoutingViolation
 from core.visualization import create_directional_figure
 
+_ERROR_BANNER_HIDDEN = {
+    "display": "none",
+    "background": "rgba(220, 38, 38, 0.9)",
+    "color": "white",
+    "padding": "10px 14px",
+    "borderRadius": "6px",
+    "marginBottom": "12px",
+    "fontSize": "12px",
+}
+_ERROR_BANNER_VISIBLE = {**_ERROR_BANNER_HIDDEN, "display": "block"}
+
 METRIC_CARD_IDS = [
     ("h_ratio", "H / V Ratio", "%"),
     ("missing_via", "Missing Via", ""),
@@ -210,12 +221,31 @@ def _compute_table_styles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def create_routing_review_tab():
     """Build the routing Layout Review tab content."""
     return html.Div([
-        # Error banner — always present in the layout (so it's a valid
-        # Output target), but empty when routing_state.last_error is unset.
-        # Updated by the _refresh_error_banner callback on tab switch /
-        # interval tick. Dismiss button clears last_error via a separate
-        # callback.
-        html.Div(id="routing-error-banner", children=""),
+        # Error banner — btn-dismiss-error must live in the initial layout
+        # (Dash validates Input IDs at startup; do not create it in callbacks).
+        html.Div(
+            id="routing-error-banner",
+            style=_ERROR_BANNER_HIDDEN,
+            children=[
+                html.Span("✗ ", style={"fontWeight": "700"}),
+                html.Span(id="routing-error-text", children=""),
+                html.Button(
+                    "Dismiss",
+                    id="btn-dismiss-error",
+                    n_clicks=0,
+                    style={
+                        "float": "right",
+                        "background": "transparent",
+                        "border": "1px solid white",
+                        "color": "white",
+                        "padding": "2px 8px",
+                        "fontSize": "10px",
+                        "borderRadius": "4px",
+                        "cursor": "pointer",
+                    },
+                ),
+            ],
+        ),
 
         # Summary cards — wrapped so the callback can update them on review
         html.Div(id="routing-metric-cards",
@@ -334,7 +364,7 @@ def _compute_violations_for_net(metrics: Dict[str, Any], thresholds) -> List[Rou
 def register_routing_review_callbacks(app):
     """Register all callbacks for the routing Layout Review tab."""
     import plotly.graph_objects as go
-    from dash import Input, Output, no_update
+    from dash import Input, Output, callback_context, no_update
 
     # --- 0. Refresh the empty-state banner when the user switches to this tab
     #         or when a tick passes while the tab is visible. Keeps the
@@ -349,47 +379,30 @@ def register_routing_review_callbacks(app):
             return no_update
         return _empty_state_banner()
 
-    # --- 0a. Error banner — driven by routing_state.last_error. Refreshes
-    #         on tab switch / interval tick (so a fail that happens on
-    #         another tab is visible the moment the user lands here) and
-    #         can be cleared via the Dismiss button. ---
+    # --- 0a. Error banner — driven by routing_state.last_error. ---
     @app.callback(
-        Output("routing-error-banner", "children"),
+        [Output("routing-error-banner", "style"),
+         Output("routing-error-text", "children")],
         [Input("interval-component", "n_intervals"),
-         Input("tabs", "value")],
+         Input("tabs", "value"),
+         Input("btn-dismiss-error", "n_clicks")],
     )
-    def _refresh_error_banner(_n, tab):
+    def _refresh_error_banner(_n, tab, dismiss_clicks):
+        ctx = callback_context
+        trigger_id = (
+            ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+        )
+
+        if trigger_id == "btn-dismiss-error" and dismiss_clicks:
+            routing_state.last_error = ""
+
         if tab not in (None, "tab-routing-review"):
-            return no_update
+            return no_update, no_update
+
         err = routing_state.last_error
         if not err:
-            return ""
-        return html.Div([
-            html.Span("✗ ", style={"fontWeight": "700", "color": "white"}),
-            html.Span(err, style={"color": "white"}),
-            html.Button("Dismiss", id="btn-dismiss-error",
-                        style={"float": "right", "background": "transparent",
-                               "border": "1px solid white", "color": "white",
-                               "padding": "2px 8px", "fontSize": "10px",
-                               "borderRadius": "4px", "cursor": "pointer"}),
-        ], style={"background": "rgba(220, 38, 38, 0.9)", "color": "white",
-                  "padding": "10px 14px", "borderRadius": "6px",
-                  "marginBottom": "12px", "fontSize": "12px"})
-
-    @app.callback(
-        Output("routing-error-banner", "children", allow_duplicate=True),
-        Input("btn-dismiss-error", "n_clicks"),
-        prevent_initial_call=True,
-    )
-    def _dismiss_error(_n):
-        # Try/except guards the case where the dismiss button doesn't
-        # exist yet (no error has been raised). The Input is harmless on
-        # first call but we still want to clear last_error if invoked.
-        try:
-            routing_state.last_error = ""
-        except Exception:
-            pass
-        return ""
+            return _ERROR_BANNER_HIDDEN, ""
+        return _ERROR_BANNER_VISIBLE, err
 
     @app.callback(
         [Output("routing-graph", "figure"),

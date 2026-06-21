@@ -127,7 +127,54 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
+}
+
+/* Tabs shell — fills viewport below header; enables inner scroll */
+.tabs-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.eda-tabs {
+    flex-shrink: 0;
+}
+
+.eda-tab-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Layout View: one scrollbar on the tab (not per-panel) */
+.eda-tab-content > .main-content {
+    display: flex;
+    flex: 1 0 auto;
+    min-height: 100%;
+    overflow: visible;
+}
+
+.eda-tab-content > .main-content .sidebar,
+.eda-tab-content > .main-content .right-panel,
+.eda-tab-content > .main-content .canvas-area {
+    overflow: visible;
+}
+
+.eda-tab-content > .main-content .panel-content,
+.eda-tab-content > .main-content .sidebar-content {
+    overflow: visible;
+    flex: none;
+    min-height: unset;
+}
+
+.eda-tab-content > .main-content .graph-container {
+    flex: 1;
+    min-height: 420px;
 }
 
 /* Header Bar */
