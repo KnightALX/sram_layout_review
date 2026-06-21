@@ -32,6 +32,13 @@ shapes:
   - file: "D:/workspace/project/svdb_shape_plot-main/sram_layout_review/tests/shapes_test_wordline_WL0.txt"
     net_name: "DEMO_NET"
 
+  # 方式 4: 同名文件不同目录 — source 自动从父目录推导
+  - file: "/path/report_32x128/shapes_trk_dbl_sa.txt"
+
+  # 方式 5: YAML 显式指定 source（覆盖路径推导）
+  - file: "/path/report_32x64/shapes_trk_dbl_sa.txt"
+    source: "sram_32x64"
+
 # 使用说明：
 # 1. 修改上面的文件路径为你的 shape 文件实际路径
 # 2. 可以使用 ~ 表示用户主目录（如 ~/Downloads/shapes_xxx.txt）

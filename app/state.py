@@ -11,7 +11,7 @@ class AppState:
     Attributes:
         config: Current LayoutReviewConfig instance
         engine: ProfessionalLayoutReviewEngine instance
-        nets_data: Dictionary mapping net names to shape data
+        nets_data: Dictionary mapping composite net_id (source/net_name) to shape data
         review_completed: Whether review has been run
         current_file: Currently loaded file path
         sd_layers: Start layers for path analysis (SD layers)

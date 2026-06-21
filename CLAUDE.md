@@ -113,6 +113,7 @@ flowchart LR
 ### Data flow — routing review (the default path)
 
 1. User uploads `.txt` shape files or a YAML batch config on the Layout View tab. `app/callbacks.py:update_net_selector` populates `app_state.nets_data` and creates a `ProfessionalLayoutReviewEngine`, calling `calculate_net_rc` for every net.
+- **Net identity:** `app_state.nets_data` keys are composite `source/net_name` (e.g. `report_32x128/trk_dbl_sa`). `source` is the file's parent directory or YAML `source:` override; browser single-file uploads use `_default`.
 2. On Routing Config tab, user picks a YAML preset + threshold values + golden/batch regex. `register_routing_config_callbacks` mutates the global `routing_state` singleton.
 3. On Routing Review tab, clicking **Run Routing Review** calls `_run_routing_review()` (`app/routing_review.py:255`). It resolves the regexes against `app_state.nets_data`, then for each net calls `core.routing_metrics.compute_for_net(...)` which returns a 6-metric dict.
 4. The callback rebuilds the 6 metric cards (averages), the sortable per-net table, and the directional viz (`create_directional_figure`).
