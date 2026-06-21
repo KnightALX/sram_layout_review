@@ -14,6 +14,7 @@ from core.net_identity import (
     DEFAULT_SOURCE,
     derive_source_from_relative_path,
     make_net_id,
+    parse_net_id,
 )
 from core.path_analysis import get_view_for_visible_layers
 from core.visualization import create_net_visualization
@@ -461,15 +462,25 @@ def register_callbacks(app: Dash):
     # =========================================================================
 
     def _properties_panel_values(selected_nets):
-        """Build the 11 property-panel fields for the current net selection."""
+        """Build the 13 property-panel fields for the current net selection."""
+        zeros_tail = (
+            '0', '0',
+            '0 Ω', '0 fF', '0 μm', '0 ps', '0 ps',
+            '0', '0', '0',
+        )
         if not selected_nets or len(selected_nets) != 1:
-            return ['--'] + ['0'] * 10
+            return ('--',) * 13
 
-        net_name = selected_nets[0]
-        if net_name not in app_state.nets_data:
-            return [net_name] + ['0'] * 10
+        net_id = selected_nets[0]
+        if net_id not in app_state.nets_data:
+            return (net_id, '--', '--') + zeros_tail
 
-        data = app_state.nets_data[net_name]
+        try:
+            source, net_name = parse_net_id(net_id)
+        except ValueError:
+            source, net_name = '--', net_id
+
+        data = app_state.nets_data[net_id]
         shapes = data['shapes']
         total_polys = sum(len(p) for p in shapes.values())
 
@@ -480,8 +491,8 @@ def register_callbacks(app: Dash):
         tpd = '0 ps'
 
         if app_state.engine and hasattr(app_state.engine, 'net_rc_data'):
-            if net_name in app_state.engine.net_rc_data:
-                rc_data = app_state.engine.net_rc_data[net_name]
+            if net_id in app_state.engine.net_rc_data:
+                rc_data = app_state.engine.net_rc_data[net_id]
                 resistance = f"{rc_data.total_resistance:.2f} Ω"
                 capacitance = f"{rc_data.total_capacitance:.2f} fF"
                 length = f"{rc_data.total_length:.2f} μm"
@@ -494,7 +505,7 @@ def register_callbacks(app: Dash):
 
         if app_state.engine and hasattr(app_state.engine, 'violations'):
             for v in app_state.engine.violations:
-                if v.net_name == net_name:
+                if v.net_name == net_id:
                     if v.severity.value == 'critical':
                         critical = str(int(critical) + 1)
                     elif v.severity.value == 'warning':
@@ -503,14 +514,17 @@ def register_callbacks(app: Dash):
                         info = str(int(info) + 1)
 
         return (
-            net_name, str(len(shapes)), str(total_polys),
+            net_id, source, net_name,
+            str(len(shapes)), str(total_polys),
             resistance, capacitance, length,
             tau_rc, tpd,
             critical, warnings, info,
         )
 
     @app.callback(
-        [Output('prop-net-name', 'children'),
+        [Output('prop-net-id', 'children'),
+         Output('prop-source', 'children'),
+         Output('prop-net-name', 'children'),
          Output('prop-layer-count', 'children'),
          Output('prop-shape-count', 'children'),
          Output('prop-resistance', 'children'),

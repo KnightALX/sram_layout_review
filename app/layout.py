@@ -25,14 +25,23 @@ def create_layout():
         _create_header_bar(),
 
         # Main Content with Tabs
-        dcc.Tabs(id='tabs', value='tab-view', children=[
-            dcc.Tab(label='Layout View', value='tab-view', children=_create_layout_view_content()),
-            dcc.Tab(label='Routing Config', value='tab-routing-config',
-                    children=create_routing_config_tab()),
-            dcc.Tab(label='Routing Review', value='tab-routing-review',
-                    children=create_routing_review_tab()),
-            dcc.Tab(label='Report Export', value='tab-export', children=_create_export_content()),
-        ], className='eda-tabs'),
+        dcc.Tabs(
+            id='tabs',
+            value='tab-view',
+            parent_className='tabs-shell',
+            className='eda-tabs',
+            content_className='eda-tab-content',
+            children=[
+                dcc.Tab(label='Layout View', value='tab-view',
+                        children=_create_layout_view_content()),
+                dcc.Tab(label='Routing Config', value='tab-routing-config',
+                        children=create_routing_config_tab()),
+                dcc.Tab(label='Routing Review', value='tab-routing-review',
+                        children=create_routing_review_tab()),
+                dcc.Tab(label='Report Export', value='tab-export',
+                        children=_create_export_content()),
+            ],
+        ),
 
         # Shared nets metadata (updated on upload; read by routing tabs)
         dcc.Store(id='nets-meta-store', data={'count': 0, 'names': []}),
@@ -94,20 +103,15 @@ def _create_header_bar():
 def _create_layout_view_content():
     """Create Layout View tab content with EDA-style panels."""
     return html.Div([
-        html.Div([
-            # Left Sidebar
-            _create_left_sidebar(),
+        # Left Sidebar
+        _create_left_sidebar(),
 
-            # Main Canvas Area
-            _create_main_canvas(),
+        # Main Canvas Area
+        _create_main_canvas(),
 
-            # Right Panel (Properties)
-            _create_right_panel(),
-        ], className='main-content'),
-
-        # Bottom Panel (Logs/Output)
-        _create_bottom_panel(),
-    ])
+        # Right Panel (Properties)
+        _create_right_panel(),
+    ], className='main-content')
 
 
 def _create_left_sidebar():
@@ -268,7 +272,15 @@ def _create_right_panel():
             html.Div([
                 html.Div('SELECTED NET', className='prop-group-header'),
                 html.Div([
-                    html.Span('Name:', className='prop-label'),
+                    html.Span('ID:', className='prop-label'),
+                    html.Span('--', id='prop-net-id', className='prop-value'),
+                ], className='prop-row'),
+                html.Div([
+                    html.Span('Source:', className='prop-label'),
+                    html.Span('--', id='prop-source', className='prop-value'),
+                ], className='prop-row'),
+                html.Div([
+                    html.Span('Net:', className='prop-label'),
                     html.Span('--', id='prop-net-name', className='prop-value'),
                 ], className='prop-row'),
                 html.Div([
@@ -365,37 +377,6 @@ def _create_right_panel():
             ], className='prop-group'),
         ], className='panel-content'),
     ], className='right-panel')
-
-
-def _create_bottom_panel():
-    """Create the bottom panel with logs and output."""
-    return html.Div([
-        # Panel Tabs
-        html.Div([
-            html.Button([
-                html.Span('Output'),
-                html.Span('0', id='output-count', className='count'),
-            ], className='panel-tab active', id='tab-output'),
-            html.Button([
-                html.Span('Violations'),
-                html.Span('0', id='violations-panel-count', className='count error'),
-            ], className='panel-tab', id='tab-violations'),
-            html.Button([
-                html.Span('Matching'),
-                html.Span('0', id='matching-count', className='count'),
-            ], className='panel-tab', id='tab-matching'),
-        ], className='panel-tabs'),
-
-        # Panel Content
-        html.Div([
-            # Output Log
-            html.Div(id='output-log', className='panel-body', style={'display': 'block'}),
-            # Violations Table
-            html.Div(id='violations-panel', className='panel-body', style={'display': 'none'}),
-            # Matching Table
-            html.Div(id='matching-panel', className='panel-body', style={'display': 'none'}),
-        ], style={'flex': 1, 'overflow': 'hidden'}),
-    ], className='bottom-panel', id='bottom-panel')
 
 
 # =============================================================================
