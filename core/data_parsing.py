@@ -10,6 +10,12 @@ import os
 import re
 from typing import TYPE_CHECKING, Optional, Tuple
 
+from core.net_identity import (
+    derive_source_from_relative_path,
+    make_net_id,
+    resolve_source,
+)
+
 if TYPE_CHECKING:
     # Import only for type checking, not at runtime
     # This avoids circular imports while maintaining type safety
@@ -140,15 +146,24 @@ def parse_yaml_batch_config(yaml_content: str) -> Optional[dict]:
         return None
 
 
-def import_shape_from_file(filepath: str, custom_net_name: str = None) -> Optional[dict]:
-    """Import shape data from a file path.
+def build_net_record(
+    filepath: str,
+    *,
+    custom_net_name: Optional[str] = None,
+    yaml_source: Optional[str] = None,
+    relative_path: Optional[str] = None,
+) -> Optional[dict]:
+    """Build a composite net record from a shape file.
 
     Args:
         filepath: Path to shape file
         custom_net_name: Optional custom net name override
+        yaml_source: Optional YAML-declared source override
+        relative_path: Optional relative path for source derivation
 
     Returns:
-        Dictionary with net_name, shapes, polygons, filename or None
+        Dictionary with net_id, source, net_name, filepath, filename,
+        shapes, polygons or None if parsing fails
     """
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -161,16 +176,48 @@ def import_shape_from_file(filepath: str, custom_net_name: str = None) -> Option
             net_name, shapes_data, polygons = result
             if custom_net_name:
                 net_name = custom_net_name
+
+            if relative_path is not None:
+                source = derive_source_from_relative_path(relative_path)
+            else:
+                source = resolve_source(filepath, yaml_source)
+
             return {
+                'net_id': make_net_id(source, net_name),
+                'source': source,
                 'net_name': net_name,
+                'filepath': filepath,
+                'filename': filename,
                 'shapes': shapes_data,
                 'polygons': polygons,
-                'filename': filename
             }
     except Exception as e:
         print(f"Error importing {filepath}: {e}")
 
     return None
+
+
+def import_shape_from_file(
+    filepath: str,
+    custom_net_name: Optional[str] = None,
+    yaml_source: Optional[str] = None,
+) -> Optional[dict]:
+    """Import shape data from a file path.
+
+    Args:
+        filepath: Path to shape file
+        custom_net_name: Optional custom net name override
+        yaml_source: Optional YAML-declared source override
+
+    Returns:
+        Dictionary with net_id, source, net_name, shapes, polygons,
+        filepath, filename or None
+    """
+    return build_net_record(
+        filepath,
+        custom_net_name=custom_net_name,
+        yaml_source=yaml_source,
+    )
 
 
 def process_yaml_batch_import(yaml_content: str, base_dir: str = None) -> list:
@@ -198,9 +245,11 @@ def process_yaml_batch_import(yaml_content: str, base_dir: str = None) -> list:
         if isinstance(shape_item, dict):
             filepath = shape_item.get('file', '')
             custom_net_name = shape_item.get('net_name')
+            yaml_source = shape_item.get('source')
         elif isinstance(shape_item, str):
             filepath = shape_item
             custom_net_name = None
+            yaml_source = None
         else:
             continue
 
@@ -216,9 +265,9 @@ def process_yaml_batch_import(yaml_content: str, base_dir: str = None) -> list:
         if custom_net_name and auto_prefix:
             custom_net_name = auto_prefix + custom_net_name
 
-        result = import_shape_from_file(filepath, custom_net_name)
+        result = import_shape_from_file(filepath, custom_net_name, yaml_source)
         if result:
             imported_nets.append(result)
-            print(f"Imported: {result['net_name']} from {result['filename']}")
+            print(f"Imported: {result['net_id']} from {result['filename']}")
 
     return imported_nets
