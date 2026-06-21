@@ -1,7 +1,7 @@
 """Path analysis utilities for layout analysis."""
 
-from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 
 @dataclass

@@ -1,9 +1,11 @@
 """Tests for via coverage analyzer."""
 import sys
+
 sys.path.insert(0, '.')
 import pytest
+
+from core.via_coverage import analyze_via_coverage
 from review_engine import Point, Polygon
-from core.via_coverage import analyze_via_coverage, ViaCoverageResult
 
 
 def _rect(x1, y1, x2, y2, layer):

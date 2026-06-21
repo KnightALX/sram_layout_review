@@ -1,10 +1,10 @@
 """Tests for Golden Net similarity scoring."""
 import sys
+
 import pytest
+
 sys.path.insert(0, '.')
-from core.golden_similarity import (
-    compute_feature_vector, compare_to_golden, FEATURE_NAMES
-)
+from core.golden_similarity import FEATURE_NAMES, compare_to_golden, compute_feature_vector
 
 
 def _metrics(h_ratio=0.5, v_ratio=0.5, total_len=10.0, via_count=2,

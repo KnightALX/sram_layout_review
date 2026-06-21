@@ -1,6 +1,7 @@
 """Application state management."""
 
 from typing import Dict, List, Optional
+
 from config_system import LayoutReviewConfig, get_sram_7nm_config
 
 

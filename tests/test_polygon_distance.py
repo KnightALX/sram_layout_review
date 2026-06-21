@@ -4,15 +4,15 @@ Unit tests for Polygon distance calculation
 测试多边形距离计算
 """
 
-import unittest
-import sys
-import os
 import math
+import os
+import sys
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from review_engine import Point, Polygon, ProfessionalLayoutReviewEngine
 from config_system import get_sram_7nm_config
+from review_engine import Point, Polygon, ProfessionalLayoutReviewEngine
 
 
 class TestPolygonDistance(unittest.TestCase):
@@ -73,7 +73,7 @@ class TestPolygonDistance(unittest.TestCase):
         dist = self.engine._min_polygon_distance(poly1, poly2)
 
         # 距离应该是 sqrt(9^2 + 9^2) = 12.73
-        expected = math.sqrt(18)
+        expected = math.sqrt(9 ** 2 + 9 ** 2)
         self.assertAlmostEqual(dist, expected, places=1)
 
     def test_overlapping_polygons(self):

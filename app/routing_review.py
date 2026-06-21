@@ -4,15 +4,18 @@ Replaces `_create_review_content()` from `app/layout.py`.
 Shows the 6 metric cards + sortable similarity table + per-net directional viz.
 """
 from __future__ import annotations
+
 import re
-from typing import List, Dict, Any
-from dash import html, dcc, dash_table
+from typing import Any, Dict, List
+
+from dash import dash_table, dcc, html
+from dash.exceptions import PreventUpdate
+
 from app.routing_state import routing_state
 from app.state import app_state  # for accessing loaded nets/polygons
-from core.routing_metrics import compute_for_net
-from core.routing_violation import RoutingViolation, ViolationKind
+from core.routing_metrics import compute_for_net, split_metal_via_polygons
+from core.routing_violation import RoutingViolation
 from core.visualization import create_directional_figure
-
 
 METRIC_CARD_IDS = [
     ("h_ratio", "H / V Ratio", "%"),
@@ -249,9 +252,8 @@ def create_routing_review_tab():
         html.Div([
             html.Button("Generate Routing Report (PPTX)", id="btn-gen-routing-pptx",
                         className="btn btn-success btn-block",
-                        disabled=not routing_state.review_completed,
-                        title=("Generate PPTX report" if routing_state.review_completed
-                               else "Run a routing review first (Configuration tab)")),
+                        disabled=True,
+                        title="Run a routing review first (Routing Config tab)"),
             html.Div(id="routing-report-status"),
             dcc.Download(id="download-routing-pptx"),
         ]),
@@ -331,8 +333,8 @@ def _compute_violations_for_net(metrics: Dict[str, Any], thresholds) -> List[Rou
 
 def register_routing_review_callbacks(app):
     """Register all callbacks for the routing Layout Review tab."""
-    from dash import Input, Output, ctx as dash_ctx, no_update
     import plotly.graph_objects as go
+    from dash import Input, Output, no_update
 
     # --- 0. Refresh the empty-state banner when the user switches to this tab
     #         or when a tick passes while the tab is visible. Keeps the
@@ -415,10 +417,11 @@ def register_routing_review_callbacks(app):
             if selected_net and selected_net in app_state.nets_data:
                 net_data = app_state.nets_data[selected_net]
                 polys = net_data.get("polygons", [])
+                metals, vias = split_metal_via_polygons(polys)
                 m = routing_state.batch_results.get(selected_net)
                 if m:
                     fig = create_directional_figure(
-                        polygons=polys, vias=[],
+                        polygons=metals, vias=vias,
                         net_name=selected_net,
                         per_polygon_dir=m.get("per_polygon_dir", []),
                         violations=[
@@ -454,10 +457,11 @@ def register_routing_review_callbacks(app):
         if viz_net and viz_net in app_state.nets_data:
             net_data = app_state.nets_data[viz_net]
             polys = net_data.get("polygons", [])
+            metals, vias = split_metal_via_polygons(polys)
             m = routing_state.batch_results.get(viz_net)
             if m:
                 fig = create_directional_figure(
-                    polygons=polys, vias=[],
+                    polygons=metals, vias=vias,
                     net_name=viz_net,
                     per_polygon_dir=m.get("per_polygon_dir", []),
                     violations=[
@@ -482,16 +486,28 @@ def register_routing_review_callbacks(app):
                 status, "tab-routing-review")
 
     @app.callback(
+        Output("btn-gen-routing-pptx", "disabled"),
+        [Input("btn-run-routing-review", "n_clicks"),
+         Input("tabs", "value")],
+    )
+    def update_pptx_button_state(_run_clicks, tab):
+        if tab not in (None, "tab-routing-review"):
+            return no_update
+        return not routing_state.review_completed
+
+    @app.callback(
         Output("download-routing-pptx", "data"),
         Input("btn-gen-routing-pptx", "n_clicks"),
         prevent_initial_call=True,
     )
     def gen_pptx(n):
         if not n or not routing_state.review_completed:
-            raise dash.exceptions.PreventUpdate
+            raise PreventUpdate
         try:
+            import os
+            import tempfile
+
             from report.routing_pptx import generate_routing_pptx
-            import tempfile, os
             # mkstemp (not a fixed path) avoids Windows PermissionError
             # when two tabs / two rapid clicks collide on the same filename.
             fd, out = tempfile.mkstemp(suffix=".pptx", prefix="routing_report_")
@@ -525,8 +541,8 @@ def _run_routing_review():
         golden_name = golden_names[0]
         g_data = app_state.nets_data[golden_name]
         g_polys = g_data.get("polygons", [])
-        g_vias = []  # to be populated when Via support is wired up
-        m = compute_for_net(golden_name, g_polys, g_vias, tech_layers, thresholds,
+        g_metals, g_vias = split_metal_via_polygons(g_polys)
+        m = compute_for_net(golden_name, g_metals, g_vias, tech_layers, thresholds,
                             golden_metrics=None, rc_model=rc_model)
         golden_metrics = {k: m[k] for k in ("h_ratio", "v_ratio", "total_len", "via_count",
                                             "r_total", "c_total", "effective_tau_ps", "bbox_aspect")}
@@ -545,8 +561,8 @@ def _run_routing_review():
     for name in batch_names:
         data = app_state.nets_data[name]
         polys = data.get("polygons", [])
-        vias = []
-        m = compute_for_net(name, polys, vias, tech_layers, thresholds,
+        metals, vias = split_metal_via_polygons(polys)
+        m = compute_for_net(name, metals, vias, tech_layers, thresholds,
                             golden_metrics=golden_metrics, rc_model=rc_model)
         m["violations"] = [vv.to_dict() for vv in _compute_violations_for_net(m, thresholds)]
         routing_state.batch_results[name] = m

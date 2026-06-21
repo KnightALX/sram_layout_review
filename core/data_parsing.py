@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 if TYPE_CHECKING:
     # Import only for type checking, not at runtime
     # This avoids circular imports while maintaining type safety
-    from review_engine import Point, Polygon
+    pass
 
 
 def _get_shape_classes() -> Tuple:

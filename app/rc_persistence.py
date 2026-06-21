@@ -13,8 +13,8 @@ Two responsibilities:
 PDK import / export share the same on-disk format (YAML).
 """
 from __future__ import annotations
+
 import json
-import os
 from collections import deque
 from pathlib import Path
 from typing import Deque, Optional
@@ -22,7 +22,6 @@ from typing import Deque, Optional
 import yaml
 
 from app.rc_model import RCModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Disk location

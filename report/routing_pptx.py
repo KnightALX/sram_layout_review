@@ -8,12 +8,14 @@ Generates a slide deck with:
 - Final: Recommendations
 """
 from __future__ import annotations
+
 import os
 from datetime import datetime
 from typing import TYPE_CHECKING
+
 from pptx import Presentation
-from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from pptx.util import Inches, Pt
 
 if TYPE_CHECKING:
     from app.routing_state import RoutingState

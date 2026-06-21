@@ -12,9 +12,9 @@ Layout Review Configuration System
 
 import json
 import re
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional, Set, Any
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from rules.base_rule import ConstraintType, Severity
 
@@ -32,7 +32,7 @@ class CheckRule:
     parameters: Dict = field(default_factory=dict)  # 规则参数
     suggestion: str = ""            # 改进建议
     reference: str = ""             # 参考文档/规范
-    
+
     def matches_net(self, net_name: str) -> bool:
         """检查net名称是否匹配规则"""
         if not self.target_nets:
@@ -55,10 +55,16 @@ class TechConfig:
     temperature: float              # 工作温度 (°C)
     layers: Dict = field(default_factory=dict)      # 层定义
     design_rules: Dict = field(default_factory=dict) # 设计规则
-    
+
     @classmethod
     def get_default_7nm(cls) -> 'TechConfig':
-        """获取默认7nm配置"""
+        """获取默认7nm配置（从 pdk/sram_7nm.yaml 加载）"""
+        from config.pdk_loader import load_pdk_yaml
+        return load_pdk_yaml("sram_7nm")
+
+    @classmethod
+    def _get_default_7nm_inline(cls) -> 'TechConfig':
+        """内联 7nm 配置（供 PDK YAML 生成与回归对比）"""
         return cls(
             name="Generic_7nm_SRAM",
             node="7nm",
@@ -252,12 +258,12 @@ class LayoutReviewConfig:
     version: str = "1.0.0"
     tech_config: TechConfig = field(default_factory=TechConfig.get_default_7nm)
     check_rules: List[CheckRule] = field(default_factory=list)
-    
+
     def __post_init__(self):
         """初始化默认规则"""
         if not self.check_rules:
             self.check_rules = self._get_default_rules()
-    
+
     def _get_default_rules(self) -> List[CheckRule]:
         """获取默认检查规则 - 基于业界最佳实践"""
         return [
@@ -297,7 +303,7 @@ class LayoutReviewConfig:
                 suggestion="在金属层重叠区域添加通孔阵列",
                 reference="Via Connection Rules - DRM Section 4.2"
             ),
-            
+
             # ============================================
             # 软约束 - 信号完整性相关
             # ============================================
@@ -338,7 +344,7 @@ class LayoutReviewConfig:
                 suggestion="缩短走线长度、减少重叠面积、使用低电容层",
                 reference="Capacitance Optimization Guide"
             ),
-            
+
             # ============================================
             # 软约束 - EM/IR相关
             # ============================================
@@ -378,7 +384,7 @@ class LayoutReviewConfig:
                 suggestion="在大电流路径使用更大的通孔阵列（如3x3或4x4）",
                 reference="Via Current Density Rules"
             ),
-            
+
             # ============================================
             # 软约束 - SRAM特定
             # ============================================
@@ -422,7 +428,7 @@ class LayoutReviewConfig:
                 suggestion="控制信号走线应尽量匹配，减少skew",
                 reference="SRAM Control Signal Routing Guidelines"
             ),
-            
+
             # ============================================
             # 软约束 - 版图质量
             # ============================================
@@ -496,7 +502,7 @@ class LayoutReviewConfig:
                 suggestion="简化层转换，减少通孔数量",
                 reference="Routing Efficiency Guidelines"
             ),
-            
+
             # ============================================
             # 信息提示
             # ============================================
@@ -512,15 +518,15 @@ class LayoutReviewConfig:
                 reference=""
             ),
         ]
-    
+
     def get_enabled_rules(self) -> List[CheckRule]:
         """获取启用的规则"""
         return [r for r in self.check_rules if r.enabled]
-    
+
     def get_rules_for_net(self, net_name: str) -> List[CheckRule]:
         """获取适用于指定net的规则"""
         return [r for r in self.get_enabled_rules() if r.matches_net(net_name)]
-    
+
     def to_dict(self) -> Dict:
         """转换为字典"""
         return {
@@ -551,7 +557,7 @@ class LayoutReviewConfig:
                 for r in self.check_rules
             ]
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict) -> 'LayoutReviewConfig':
         """从字典创建配置"""
@@ -564,7 +570,7 @@ class LayoutReviewConfig:
             layers=tech_data.get("layers", {}),
             design_rules=tech_data.get("design_rules", {})
         )
-        
+
         check_rules = []
         for rule_data in data.get("check_rules", []):
             check_rules.append(CheckRule(
@@ -579,7 +585,7 @@ class LayoutReviewConfig:
                 suggestion=rule_data.get("suggestion", ""),
                 reference=rule_data.get("reference", "")
             ))
-        
+
         return cls(
             name=data.get("name", "SRAM_Layout_Review"),
             description=data.get("description", ""),
@@ -587,29 +593,29 @@ class LayoutReviewConfig:
             tech_config=tech_config,
             check_rules=check_rules
         )
-    
+
     def save_to_file(self, filepath: str):
         """保存配置到文件"""
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
-    
+
     @classmethod
     def load_from_file(cls, filepath: str) -> 'LayoutReviewConfig':
         """从文件加载配置"""
         with open(filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return cls.from_dict(data)
-    
+
     # ============================================
     # 在线编辑支持
     # ============================================
-    
+
     def add_rule(self, rule: 'CheckRule') -> bool:
         """添加新规则
-        
+
         Args:
             rule: 要添加的规则
-            
+
         Returns:
             是否添加成功（rule_id已存在返回False）
         """
@@ -617,17 +623,17 @@ class LayoutReviewConfig:
         for existing in self.check_rules:
             if existing.rule_id == rule.rule_id:
                 return False
-        
+
         self.check_rules.append(rule)
         return True
-    
+
     def update_rule(self, rule_id: str, **kwargs) -> bool:
         """更新规则
-        
+
         Args:
             rule_id: 规则ID
             **kwargs: 要更新的字段
-            
+
         Returns:
             是否更新成功
         """
@@ -638,13 +644,13 @@ class LayoutReviewConfig:
                         setattr(rule, key, value)
                 return True
         return False
-    
+
     def delete_rule(self, rule_id: str) -> bool:
         """删除规则
-        
+
         Args:
             rule_id: 规则ID
-            
+
         Returns:
             是否删除成功
         """
@@ -653,13 +659,13 @@ class LayoutReviewConfig:
                 self.check_rules.pop(i)
                 return True
         return False
-    
+
     def get_rule(self, rule_id: str) -> Optional['CheckRule']:
         """获取指定规则
-        
+
         Args:
             rule_id: 规则ID
-            
+
         Returns:
             规则对象，不存在返回None
         """
@@ -667,13 +673,13 @@ class LayoutReviewConfig:
             if rule.rule_id == rule_id:
                 return rule
         return None
-    
+
     def toggle_rule(self, rule_id: str) -> Optional[bool]:
         """切换规则启用状态
-        
+
         Args:
             rule_id: 规则ID
-            
+
         Returns:
             新的启用状态，不存在返回None
         """
@@ -682,43 +688,43 @@ class LayoutReviewConfig:
             rule.enabled = not rule.enabled
             return rule.enabled
         return None
-    
+
     def validate_rule(self, rule_data: Dict) -> List[str]:
         """校验规则数据
-        
+
         Args:
             rule_data: 规则数据字典
-            
+
         Returns:
             错误列表，空表示校验通过
         """
         errors = []
-        
+
         # 必填字段
         required = ['rule_id', 'name', 'description', 'constraint_type', 'severity', 'target_nets']
-        for field in required:
-            if field not in rule_data or not rule_data[field]:
-                errors.append(f"Missing required field: {field}")
-        
+        for req_field in required:
+            if req_field not in rule_data or not rule_data[req_field]:
+                errors.append(f"Missing required field: {req_field}")
+
         # rule_id格式检查
         if 'rule_id' in rule_data:
             if not re.match(r'^[A-Z]{2,4}\d{3}$', rule_data['rule_id']):
                 errors.append("rule_id must match format: 2-4 uppercase letters + 3 digits (e.g., DRC001)")
-        
+
         # constraint_type有效性
         if 'constraint_type' in rule_data:
             try:
                 ConstraintType(rule_data['constraint_type'])
             except ValueError:
                 errors.append(f"Invalid constraint_type: {rule_data['constraint_type']}")
-        
+
         # severity有效性
         if 'severity' in rule_data:
             try:
                 Severity(rule_data['severity'])
             except ValueError:
                 errors.append(f"Invalid severity: {rule_data['severity']}")
-        
+
         # target_nets格式
         if 'target_nets' in rule_data:
             if not isinstance(rule_data['target_nets'], list):
@@ -729,32 +735,32 @@ class LayoutReviewConfig:
                         re.compile(pattern)
                     except re.error as e:
                         errors.append(f"Invalid regex pattern '{pattern}': {e}")
-        
+
         # parameters格式
         if 'parameters' in rule_data:
             if not isinstance(rule_data['parameters'], dict):
                 errors.append("parameters must be a dictionary")
-        
+
         return errors
-    
+
     def duplicate_rule(self, rule_id: str, new_rule_id: str) -> Optional['CheckRule']:
         """复制规则
-        
+
         Args:
             rule_id: 源规则ID
             new_rule_id: 新规则ID
-            
+
         Returns:
             新创建的规则，失败返回None
         """
         source = self.get_rule(rule_id)
         if not source:
             return None
-        
+
         # 检查新ID是否已存在
         if self.get_rule(new_rule_id):
             return None
-        
+
         # 创建副本
         new_rule = CheckRule(
             rule_id=new_rule_id,
@@ -768,37 +774,37 @@ class LayoutReviewConfig:
             suggestion=source.suggestion,
             reference=source.reference
         )
-        
+
         self.check_rules.append(new_rule)
         return new_rule
-    
+
     def import_rules(self, rules_data: List[Dict], mode: str = 'merge') -> Dict:
         """批量导入规则
-        
+
         Args:
             rules_data: 规则数据列表
             mode: 'merge' 合并, 'replace' 替换
-            
+
         Returns:
             导入结果统计
         """
         result = {'success': 0, 'skipped': 0, 'errors': []}
-        
+
         if mode == 'replace':
             self.check_rules = []
-        
+
         for rule_data in rules_data:
             errors = self.validate_rule(rule_data)
             if errors:
                 result['errors'].append({'rule_id': rule_data.get('rule_id', 'unknown'), 'errors': errors})
                 result['skipped'] += 1
                 continue
-            
+
             rule_id = rule_data['rule_id']
             if self.get_rule(rule_id):
                 result['skipped'] += 1
                 continue
-            
+
             try:
                 rule = CheckRule(
                     rule_id=rule_data['rule_id'],
@@ -817,23 +823,23 @@ class LayoutReviewConfig:
             except Exception as e:
                 result['errors'].append({'rule_id': rule_id, 'errors': [str(e)]})
                 result['skipped'] += 1
-        
+
         return result
-    
+
     def export_rules(self, rule_ids: List[str] = None) -> List[Dict]:
         """导出规则
-        
+
         Args:
             rule_ids: 要导出的规则ID列表，None表示全部
-            
+
         Returns:
             规则数据列表
         """
         rules = self.check_rules
-        
+
         if rule_ids:
             rules = [r for r in rule_ids if r in [x.rule_id for x in self.check_rules]]
-        
+
         return [
             {
                 "rule_id": r.rule_id,
@@ -875,7 +881,7 @@ def get_sram_5nm_config() -> LayoutReviewConfig:
     # 修改工艺参数为5nm
     config.tech_config.node = "5nm"
     config.tech_config.voltage = 0.65
-    
+
     # 更新5nm层参数
     for layer_name, layer in config.tech_config.layers.items():
         if layer.get('type') == 'metal':
@@ -883,7 +889,7 @@ def get_sram_5nm_config() -> LayoutReviewConfig:
             layer['min_space'] *= 0.7
             layer['resistance_per_sq'] *= 1.2
             layer['current_density'] *= 0.9
-    
+
     return config
 
 
@@ -894,7 +900,7 @@ def get_analog_config() -> LayoutReviewConfig:
         description="模拟电路版图Review检查配置",
         version="1.0.0"
     )
-    
+
     # 添加模拟电路特定的严格规则
     analog_rules = [
         CheckRule(
@@ -920,7 +926,7 @@ def get_analog_config() -> LayoutReviewConfig:
             reference="CMP Dummy Fill Guidelines"
         ),
     ]
-    
+
     config.check_rules.extend(analog_rules)
     return config
 

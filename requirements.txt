@@ -11,7 +11,8 @@ kaleido>=0.2.0  # For plotly image export
 shapely>=2.0.0
 
 # Dash UI (using local Bootstrap CSS from assets/ folder)
-dash>=2.0.0
+# Pin <3: Dash 4.x requires Jupyter comm and breaks CLI startup on Python 3.8
+dash>=2.0.0,<3.0.0
 
 # PPTX generation
 python-pptx>=0.6.21

@@ -3,25 +3,32 @@
 Test suite for Layout Review Tool
 Tests shape parsing, RC calculation, and rule checking
 
+.. deprecated::
+    Use ``python -m pytest tests/`` from the repo root instead.
+    This script remains for backward compatibility only.
+
 Usage:
     python tests/run_tests.py              # Run all tests
     python tests/run_tests.py -v           # Verbose mode
     python tests/run_tests.py TestRC       # Run specific test class
 """
-
-import sys
 import os
+import sys
 import unittest
+import warnings
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from review_engine import (
-    ProfessionalLayoutReviewEngine, Point, Polygon,
-    TechConfig, LayoutReviewConfig
+warnings.warn(
+    "tests/run_tests.py is deprecated; use: python -m pytest tests/",
+    DeprecationWarning,
+    stacklevel=1,
 )
+
 from config_system import get_sram_7nm_config
 from core.data_parsing import parse_shape_txt
+from review_engine import ProfessionalLayoutReviewEngine
 
 
 def test_parse_shape_txt():
@@ -120,7 +127,7 @@ def test_drc_violation():
     net_name, shapes_data, polygons = result
 
     engine.add_net_polygons(net_name, polygons)
-    rc_data = engine.calculate_net_rc(net_name)
+    engine.calculate_net_rc(net_name)
 
     print(f"  Net: {net_name}")
     print(f"  Polygons: {len(polygons)}")
@@ -134,7 +141,7 @@ def test_drc_violation():
         print(f"  Layer {poly.layer}: width={actual_width:.4f}μm, min={min_width}μm")
 
         if actual_width < min_width * 0.95:
-            print(f"    → Width VIOLATION detected!")
+            print("    → Width VIOLATION detected!")
 
     print("  [OK] DRC violation check passed")
 
@@ -209,7 +216,7 @@ def test_full_review():
     # Run full review
     summary = engine.run_full_review()
 
-    print(f"\n  Summary:")
+    print("\n  Summary:")
     print(f"    Total nets: {summary.total_nets}")
     print(f"    Total violations: {summary.total_violations}")
     print(f"    Critical: {summary.critical_count}")
@@ -236,7 +243,7 @@ def test_layer_parsing_issue():
     print(f"  Layers in file: {list(shapes_data.keys())}")
 
     config = get_sram_7nm_config()
-    engine = ProfessionalLayoutReviewEngine(config)
+    ProfessionalLayoutReviewEngine(config)
 
     # Check if layers match
     for layer in shapes_data.keys():

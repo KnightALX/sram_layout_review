@@ -5,10 +5,10 @@ Multi-panel layout with high information density for chip design workflows.
 Uses dcc.Tabs for proper callback integration.
 """
 
-from dash import html, dcc
+from dash import dcc, html
+
 from app.routing_config import create_routing_config_tab
 from app.routing_review import create_routing_review_tab
-from app.rc_prediction import create_rc_prediction_tab
 
 
 def create_layout():
@@ -19,15 +19,13 @@ def create_layout():
     """
     return html.Div([
         # Theme store - persists theme preference
-        dcc.Store(id='theme-store', data='dark'),
+        dcc.Store(id='theme-store', data='light'),
 
         # Header Bar
         _create_header_bar(),
 
         # Main Content with Tabs
-        dcc.Tabs(id='tabs', value='tab-rc-prediction', children=[
-            dcc.Tab(label='RC Prediction', value='tab-rc-prediction',
-                    children=create_rc_prediction_tab()),
+        dcc.Tabs(id='tabs', value='tab-view', children=[
             dcc.Tab(label='Layout View', value='tab-view', children=_create_layout_view_content()),
             dcc.Tab(label='Routing Config', value='tab-routing-config',
                     children=create_routing_config_tab()),
@@ -36,22 +34,11 @@ def create_layout():
             dcc.Tab(label='Report Export', value='tab-export', children=_create_export_content()),
         ], className='eda-tabs'),
 
-        # Hidden modals
-        html.Div(id='rule-editor-modal', style={'display': 'none'}, children=_create_rule_editor_modal_content()),
-        html.Div(id='net-detail-modal', style={'display': 'none'}, children=_create_net_detail_modal_content()),
+        # Shared nets metadata (updated on upload; read by routing tabs)
+        dcc.Store(id='nets-meta-store', data={'count': 0, 'names': []}),
 
-        # Download components
-        dcc.Download(id='download-config'),
-        dcc.Download(id='download-report'),
-
-        # Store components
-        dcc.Store(id='app-state-store'),
-        dcc.Store(id='selected-rule-store'),
-        dcc.Store(id='filtered-nets-store'),
-        dcc.Store(id='selected-net-detail-store'),
-
-        # Interval
-        dcc.Interval(id='interval-component', interval=1000, n_intervals=0),
+        # Interval — retained for routing error banner refresh on tab switch
+        dcc.Interval(id='interval-component', interval=5000, n_intervals=0),
     ], className='app-container')
 
 

@@ -10,9 +10,9 @@ This is a routing-focused similarity, not a full shape-IoU.
 For shape geometric similarity, use a separate Hausdorff/IoU pass (out of scope here).
 """
 from __future__ import annotations
-import math
-from typing import Dict, Tuple, List
 
+import math
+from typing import Dict, List, Tuple
 
 # Canonical feature names (order matters for vector indexing)
 FEATURE_NAMES: List[str] = [

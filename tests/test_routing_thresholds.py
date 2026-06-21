@@ -1,6 +1,7 @@
 """Tests for routing threshold dataclass."""
 import pytest
-from config.routing_thresholds import RoutingThresholds, ThresholdField
+
+from config.routing_thresholds import RoutingThresholds
 
 
 def test_default_thresholds_for_wl_net():

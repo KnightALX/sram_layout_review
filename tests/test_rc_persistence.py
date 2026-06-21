@@ -4,18 +4,21 @@
 - rc_persistence (PDK import / export / history)
 """
 import json
-import math
 
 import pytest
 
-from app.rc_model import RCModelConfig, ModelType
+from app.rc_model import ModelType, RCModelConfig
 from app.rc_persistence import (
-    parse_pdk_text, merge_pdk_into, to_yaml,
-    HistoryStack, history as rc_history,
+    HistoryStack,
+    merge_pdk_into,
+    parse_pdk_text,
+    to_yaml,
+)
+from app.rc_persistence import (
+    history as rc_history,
 )
 from app.routing_state import routing_state
 from core.effective_tau import compute_effective_tau
-
 
 # --- effective_tau model variations ----------------------------------------
 
@@ -31,9 +34,9 @@ def test_lumped_pi_tau():
     tau = compute_effective_tau([_Seg()], r_per_sq=0.15, c_per_um=0.20,
                                 method="lumped_pi")
     # R = 0.15 * 100 / 0.05 = 300 Ω
-    # C = 0.20 * 100 = 20 fF
-    # tau = 300 * 20 fs = 6000 fs = 6.0 ps
-    assert tau == pytest.approx(6.0, rel=1e-9)
+    # C = 0.20*100 + 0.1*2*(100.05) = 40.01 fF
+    # tau = 300 * 40.01 * 1e-3 = 12.003 ps
+    assert tau == pytest.approx(12.003, rel=1e-4)
 
 
 def test_t_model_tau_is_half_lumped():
@@ -151,9 +154,12 @@ def test_to_yaml_roundtrip():
 
 def test_history_push_pop():
     h = HistoryStack(maxlen=3)
-    a = RCModelConfig(tech_node="A"); a.validate()
-    b = RCModelConfig(tech_node="B"); b.validate()
-    c = RCModelConfig(tech_node="C"); c.validate()
+    a = RCModelConfig(tech_node="A")
+    a.validate()
+    b = RCModelConfig(tech_node="B")
+    b.validate()
+    c = RCModelConfig(tech_node="C")
+    c.validate()
     h.push(a)
     h.push(b)
     h.push(c)

@@ -10,9 +10,10 @@ Three expert perspectives are reflected in the section comments:
   - 建模专家 (modeling):  lumped-π / T / distributed, segment length, gnd/cpl ratio
 """
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 
 class ModelType(str, Enum):

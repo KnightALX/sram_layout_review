@@ -5,11 +5,12 @@ RC Calculator - 精确的电阻电容计算
 
 import math
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
-from review_engine import Point, Polygon, WireSegment, Via, NetRCData
+if TYPE_CHECKING:
+    from app.rc_model import RCModelConfig
 
+from review_engine import NetRCData, Point, Polygon, Via, WireSegment
 
 # Module-level constant: layer name aliases used across both pipelines.
 # Centralized here so a new PDK only needs to extend ONE place instead of 4
@@ -234,14 +235,10 @@ def compute_net_metrics_with_tau(
     Prediction Tab hooks into.  When `rc_model` is None, the old
     `tech_layers` path is used (backward compat).
     """
-    from core.effective_tau import compute_effective_tau
-    from typing import TYPE_CHECKING
-    if TYPE_CHECKING:
-        from app.rc_model import RCModelConfig
+    from core.effective_tau import compute_effective_tau, ohm_ff_to_ps
 
     rc_data = calculate_net_rc(net_name, polygons, vias, tech_layers)
 
-    # Pick the r_per_sq / c_per_um to use for tau estimation
     if rc_data.layer_resistances:
         dominant_layer = max(rc_data.layer_resistances, key=rc_data.layer_resistances.get)
     else:
@@ -251,25 +248,9 @@ def compute_net_metrics_with_tau(
     r_per_sq = layer_info.get("resistance_per_sq", 0.15)
     c_per_um = layer_info.get("capacitance_per_um", 0.20)
 
+    rc_model_applied = False
     if rc_model is not None:
-        # RC Prediction Tab path: use the user's process model.
-        #   - For tau we use the dominant layer's sheet R (after tempco)
-        #     and the C/µm we get from the full metal stack via
-        #     `predict_wire_capacitance`.
-        #   - For total R/C we re-sum over segments using the same model so
-        #     the RC Prediction Tab's config is fully reflected in the
-        #     numbers shown on the Routing Review tab.
         try:
-            r_per_sq = rc_model.metal_r_sheet.get(
-                dominant_layer, r_per_sq
-            )
-            # 100 µm probe — C/µm is length-invariant in our model
-            c_probe = rc_model.predict_wire_capacitance(dominant_layer, 100.0)
-            if c_probe > 0:
-                c_per_um = c_probe / 100.0
-
-            # Re-derive R and C with the RC model (so the routing review
-            # tab shows what the user actually configured).
             r_sum = 0.0
             c_sum = 0.0
             for seg in rc_data.wire_segments:
@@ -279,30 +260,33 @@ def compute_net_metrics_with_tau(
                 r_sum += rc_model.predict_via_resistance(getattr(via, "layer", "via1"))
             rc_data.total_resistance = r_sum
             rc_data.total_capacitance = c_sum
+            rc_model_applied = True
         except (KeyError, ValueError, ZeroDivisionError):
-            # Validation / arithmetic failure — silently fall back to
-            # the legacy tech_layers path.  The RC Prediction tab is
-            # responsible for showing validation errors before Apply.
             pass
 
-    # Compute tau.  Honour the user-configured model type when present
-    # (e.g. t_model → 0.5 * R * C, distributed_5 → ladder factor).
     tau_method_eff = tau_method
     n_segments_eff = 5
     if rc_model is not None:
         tau_method_eff = rc_model.model_type
-        # Heuristic: pick segment count from wire length / user's
-        # length_per_segment_um.  Capped to avoid huge numbers.
         total_len = sum(s.length for s in rc_data.wire_segments)
         if total_len > 0 and rc_model.length_per_segment_um > 0:
             n_segments_eff = max(2, min(64, int(math.ceil(
                 total_len / rc_model.length_per_segment_um
             ))))
 
-    tau_ps = compute_effective_tau(
-        rc_data.wire_segments, r_per_sq, c_per_um,
-        method=tau_method_eff, n_segments=n_segments_eff,
-    )
+    if rc_model_applied:
+        # τ derived from the same R/C totals shown in the UI (RC prediction path).
+        tau_ps = ohm_ff_to_ps(
+            rc_data.total_resistance,
+            rc_data.total_capacitance,
+            method=tau_method_eff,
+            n_segments=n_segments_eff,
+        )
+    else:
+        tau_ps = compute_effective_tau(
+            rc_data.wire_segments, r_per_sq, c_per_um,
+            method=tau_method_eff, n_segments=n_segments_eff,
+        )
 
     return {
         "net_name": net_name,

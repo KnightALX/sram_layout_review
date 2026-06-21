@@ -1,10 +1,10 @@
 """End-to-end test: load shapes → run routing review → check all 6 metrics."""
-import os
 import sys
+
 sys.path.insert(0, '.')
-from review_engine import Polygon, Point
 from config.routing_thresholds import RoutingThresholds
 from core.routing_metrics import compute_for_net
+from review_engine import Point, Polygon
 
 
 def _tech():

@@ -1,10 +1,12 @@
 """Tests for routing metrics aggregator."""
 import sys
+
 sys.path.insert(0, '.')
 import pytest
-from review_engine import Point, Polygon, Via
+
 from config.routing_thresholds import RoutingThresholds
-from core.routing_metrics import compute_for_net, check_gates
+from core.routing_metrics import check_gates, compute_for_net, split_metal_via_polygons
+from review_engine import Point, Polygon
 
 
 def _rect(x1, y1, x2, y2, layer):
@@ -135,6 +137,46 @@ def test_soft_gates_enforced_without_golden():
     pass_, reasons = check_gates(metrics, thresholds, has_golden=False)
     assert pass_ is False
     assert any("h_ratio" in r for r in reasons)
+
+
+def test_split_metal_via_polygons_separates_layers():
+    """Mixed polygon list splits into metals and vias."""
+    metals_in = [_rect(0, 0, 10, 1, "met1"), _rect(5, 0, 6, 10, "met2")]
+    vias_in = [_via(5.5, 5, layer="via1")]
+    all_polys = metals_in + vias_in
+    metals, vias = split_metal_via_polygons(all_polys)
+    assert len(metals) == 2
+    assert len(vias) == 1
+    assert metals[0].layer == "met1"
+    assert vias[0].layer == "via1"
+
+
+def test_split_metal_via_polygons_empty():
+    metals, vias = split_metal_via_polygons([])
+    assert metals == []
+    assert vias == []
+
+
+def test_split_metal_via_polygons_via0_layer():
+    """via0 (poly contact) must be recognized as a via layer."""
+    polys = [_rect(0, 0, 2, 2, "met1"), _via(1, 1, layer="via0")]
+    metals, vias = split_metal_via_polygons(polys)
+    assert len(metals) == 1
+    assert len(vias) == 1
+    assert vias[0].layer == "via0"
+
+
+def test_compute_for_net_detects_missing_via_from_mixed_polygons():
+    """Overlapping met1+met2 without via polygon → missing_via_count > 0."""
+    met1 = _rect(0, 0, 2, 4, "met1")
+    met2 = _rect(0, 0, 2, 4, "met2")
+    mixed = [met1, met2]
+    metals, vias = split_metal_via_polygons(mixed)
+    assert len(vias) == 0
+    t = RoutingThresholds.for_preset("sram_7nm_wl")
+    m = compute_for_net("MISSING_VIA", metals, vias, _tech_layers(), t, golden_metrics=None)
+    assert m["missing_via_count"] > 0
+    assert m["via_coverage"] < 1.0
 
 
 def test_low_similarity_no_bypass():

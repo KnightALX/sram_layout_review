@@ -4,15 +4,15 @@ Comprehensive Test Suite for Layout Review Tool
 Tests shape parsing, RC calculation, and rule checking with realistic scenarios
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from review_engine import ProfessionalLayoutReviewEngine, TechConfig
 from config_system import LayoutReviewConfig
 from layout_review_app import parse_shape_txt
+from review_engine import ProfessionalLayoutReviewEngine, TechConfig
 
 
 def create_test_config():
@@ -97,7 +97,7 @@ def test_case(name, filepath):
 
     result = parse_shape_txt(content, os.path.basename(filepath))
     if result is None:
-        print(f"  [FAIL] Failed to parse file")
+        print("  [FAIL] Failed to parse file")
         return False
 
     net_name, shapes_data, polygons = result
@@ -189,7 +189,7 @@ def main():
     # Analyze matching
     if "BL0" in engine.nets and "BLB0" in engine.nets:
         matching = engine.analyze_matching("BL0", "BLB0")
-        print(f"\n  BL0 vs BLB0 Matching:")
+        print("\n  BL0 vs BLB0 Matching:")
         print(f"    Score: {matching.match_score:.1f}")
         print(f"    Length ratio: {matching.length_ratio:.4f}")
         print(f"    Resistance ratio: {matching.resistance_ratio:.4f}")
@@ -212,7 +212,7 @@ def main():
 
     if "WL0" in engine2.nets and "WL1" in engine2.nets:
         matching2 = engine2.analyze_matching("WL0", "WL1")
-        print(f"\n  WL0 vs WL1 Matching:")
+        print("\n  WL0 vs WL1 Matching:")
         print(f"    Score: {matching2.match_score:.1f}")
         print(f"    Length ratio: {matching2.length_ratio:.4f}")
         print(f"    Resistance ratio: {matching2.resistance_ratio:.4f}")

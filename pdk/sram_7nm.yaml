@@ -1,0 +1,161 @@
+name: Generic_7nm_SRAM
+node: 7nm
+voltage: 0.75
+temperature: 85.0
+layers:
+  met1:
+    type: metal
+    direction: vertical
+    min_width: 0.032
+    min_space: 0.032
+    pitch: 0.064
+    thickness: 0.06
+    resistance_per_sq: 0.15
+    capacitance_per_um: 0.2
+    current_density: 10.0
+    color: '#1f77b4'
+    order: 10
+  met2:
+    type: metal
+    direction: horizontal
+    min_width: 0.032
+    min_space: 0.032
+    pitch: 0.064
+    thickness: 0.06
+    resistance_per_sq: 0.12
+    capacitance_per_um: 0.16
+    current_density: 12.0
+    color: '#ff7f0e'
+    order: 20
+  met3:
+    type: metal
+    direction: vertical
+    min_width: 0.032
+    min_space: 0.032
+    pitch: 0.064
+    thickness: 0.06
+    resistance_per_sq: 0.1
+    capacitance_per_um: 0.14
+    current_density: 14.0
+    color: '#2ca02c'
+    order: 30
+  met4:
+    type: metal
+    direction: horizontal
+    min_width: 0.042
+    min_space: 0.042
+    pitch: 0.084
+    thickness: 0.08
+    resistance_per_sq: 0.08
+    capacitance_per_um: 0.12
+    current_density: 18.0
+    color: '#d62728'
+    order: 40
+  met5:
+    type: metal
+    direction: vertical
+    min_width: 0.056
+    min_space: 0.056
+    pitch: 0.112
+    thickness: 0.11
+    resistance_per_sq: 0.06
+    capacitance_per_um: 0.1
+    current_density: 25.0
+    color: '#9467bd'
+    order: 50
+  met6:
+    type: metal
+    direction: horizontal
+    min_width: 0.074
+    min_space: 0.074
+    pitch: 0.148
+    thickness: 0.14
+    resistance_per_sq: 0.04
+    capacitance_per_um: 0.08
+    current_density: 35.0
+    color: '#8c564b'
+    order: 60
+  met7:
+    type: metal
+    direction: vertical
+    min_width: 0.1
+    min_space: 0.1
+    pitch: 0.2
+    thickness: 0.2
+    resistance_per_sq: 0.025
+    capacitance_per_um: 0.06
+    current_density: 50.0
+    color: '#e377c2'
+    order: 70
+  via0:
+    type: via
+    min_size: 0.024
+    min_space: 0.024
+    resistance: 1.0
+    current_capacity: 50.0
+    color: '#7f7f7f'
+    order: 15
+  via1:
+    type: via
+    min_size: 0.028
+    min_space: 0.028
+    resistance: 0.8
+    current_capacity: 60.0
+    color: '#bcbd22'
+    order: 25
+  via2:
+    type: via
+    min_size: 0.028
+    min_space: 0.028
+    resistance: 0.6
+    current_capacity: 70.0
+    color: '#17becf'
+    order: 35
+  via3:
+    type: via
+    min_size: 0.036
+    min_space: 0.036
+    resistance: 0.5
+    current_capacity: 80.0
+    color: '#393b79'
+    order: 45
+  via4:
+    type: via
+    min_size: 0.048
+    min_space: 0.048
+    resistance: 0.4
+    current_capacity: 100.0
+    color: '#637939'
+    order: 55
+  via5:
+    type: via
+    min_size: 0.064
+    min_space: 0.064
+    resistance: 0.3
+    current_capacity: 120.0
+    color: '#8c6d31'
+    order: 65
+  poly:
+    type: poly
+    direction: horizontal
+    min_width: 0.02
+    min_space: 0.03
+    resistance_per_sq: 10.0
+    capacitance_per_um: 0.5
+    color: '#843c39'
+    order: 5
+  active:
+    type: active
+    min_width: 0.02
+    min_space: 0.02
+    resistance_per_sq: 5.0
+    color: '#7b4173'
+    order: 3
+design_rules:
+  max_metal_length: 500
+  max_via_chain: 4
+  min_via_coverage: 0.02
+  max_aspect_ratio: 200
+  matching_tolerance: 0.05
+  max_rc_variation: 0.1
+  em_safety_factor: 0.8

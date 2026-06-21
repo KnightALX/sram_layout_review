@@ -1,11 +1,12 @@
 """YAML preset loader/saver for routing thresholds."""
 from __future__ import annotations
-import os
+
 from pathlib import Path
 from typing import List
-import yaml
-from config.routing_thresholds import RoutingThresholds
 
+import yaml
+
+from config.routing_thresholds import RoutingThresholds
 
 PRESETS_DIR = Path(__file__).parent / "presets"
 REQUIRED_FIELDS = set(RoutingThresholds.__dataclass_fields__.keys())

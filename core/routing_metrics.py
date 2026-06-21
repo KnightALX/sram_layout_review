@@ -1,16 +1,35 @@
 """Aggregate the 6 routing metrics for a single net and check gates."""
 from __future__ import annotations
+
 import re
-from typing import Dict, List, Any, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 if TYPE_CHECKING:
-    from review_engine import Polygon, Via, Point
+    from app.rc_model import RCModelConfig
     from config.routing_thresholds import RoutingThresholds
+    from review_engine import Polygon, Via
 
 from core.directional_analyzer import analyze_net_directional
-from core.via_coverage import analyze_via_coverage
-from core.rc_calculator import compute_net_metrics_with_tau
 from core.golden_similarity import compare_to_golden
+from core.rc_calculator import compute_net_metrics_with_tau
+from core.via_coverage import analyze_via_coverage
+from core.visualization import is_via_layer
+
+
+def split_metal_via_polygons(polygons: List["Polygon"]) -> Tuple[List["Polygon"], List["Polygon"]]:
+    """Split a mixed polygon list into metal shapes and via shapes.
+
+    Shape files store all layers in one list. Routing review must pass
+    metals and vias separately to analyze_via_coverage().
+    """
+    metals: List["Polygon"] = []
+    vias: List["Polygon"] = []
+    for poly in polygons:
+        if is_via_layer(poly.layer):
+            vias.append(poly)
+        else:
+            metals.append(poly)
+    return metals, vias
 
 
 def _bbox_aspect(polygons: List["Polygon"]) -> float:
@@ -33,7 +52,7 @@ def _polygon_to_via(poly, tech_layers: Dict) -> "Via":
     metals. The `resistance` is a computed property on Via (based on size),
     so we don't need to (and can't) set it as an instance attribute.
     """
-    from review_engine import Via, Point
+    from review_engine import Point, Via
     pts = poly.points
     cx = sum(p.x for p in pts) / len(pts)
     cy = sum(p.y for p in pts) / len(pts)
@@ -53,7 +72,7 @@ def _polygon_to_via(poly, tech_layers: Dict) -> "Via":
     )
 
 
-def _coerce_vias(vias_in, tech_layers: Dict) -> list:
+def coerce_vias(vias_in, tech_layers: Dict) -> list:
     """Accept a list of Via or Polygon; return a list of Via."""
     from review_engine import Via
     out = []
@@ -203,7 +222,7 @@ def compute_for_net(
         return _empty_result(net_name, "empty net: no polygons to analyze")
 
     # Convert any polygon-vias to Via objects (for the rc_calculator)
-    vias_for_rc = _coerce_vias(vias or [], tech_layers)
+    vias_for_rc = coerce_vias(vias or [], tech_layers)
 
     # 1. Directional
     dr = analyze_net_directional(polygons)

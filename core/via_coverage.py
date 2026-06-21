@@ -14,8 +14,9 @@ Layer-pair convention (matches typical 7nm/5nm FinFET BEOL):
 - ...
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 if TYPE_CHECKING:
     from review_engine import Polygon

@@ -4,14 +4,14 @@ Unit tests for Matching Analyzer module
 测试匹配分析功能
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from review_engine import Point, Polygon, NetRCData, MatchingAnalysis
 from core.matching_analyzer import analyze_pair_matching
+from review_engine import NetRCData, Point, Polygon
 
 
 class TestMatchingAnalysis(unittest.TestCase):

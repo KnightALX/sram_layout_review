@@ -1,8 +1,9 @@
 """Tests for directional visualization."""
 import sys
+
 sys.path.insert(0, '.')
-from review_engine import Point, Polygon
 from core.visualization import create_directional_figure
+from review_engine import Point, Polygon
 
 
 def _rect(x1, y1, x2, y2, layer):

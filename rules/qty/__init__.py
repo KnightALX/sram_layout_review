@@ -4,8 +4,10 @@ QTY Rules - Layout Quality Rules
 包含复杂多边形、通孔链、覆盖率等检查
 """
 
-from typing import List, Dict
-from rules.base_rule import BaseRule, ConstraintType, Severity, RuleParameter
+import math
+from typing import Dict, List
+
+from rules.base_rule import BaseRule, ConstraintType, RuleParameter, Severity
 from rules.registry import register_rule
 
 
@@ -64,7 +66,7 @@ class ViaCoverageRule(BaseRule):
         total_area = getattr(net_data, 'total_area', 0)
 
         if total_area > 10 and via_count < 2:
-            min_cov = self.get_parameter('min_coverage', 0.02)
+            self.get_parameter('min_coverage', 0.02)
             violations.append({
                 'rule_id': self.rule_id,
                 'rule_name': self.name,
@@ -208,5 +210,4 @@ class MultiLayerRouteRule(BaseRule):
         return violations
 
 
-import math
 __all__ = ['ExcessiveViaChainRule', 'ViaCoverageRule', 'ComplexShapeRule', 'Corner90Rule', 'MultiLayerRouteRule']

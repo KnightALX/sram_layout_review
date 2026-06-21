@@ -10,15 +10,17 @@ critical — without it, the user has no way to know what nets exist or whether
 their regex matches anything.
 """
 from __future__ import annotations
+
 import re
 from typing import List, Optional
-from dash import html, dcc
-from config.routing_thresholds import RoutingThresholds
-from config.preset_loader import list_yaml_presets
+
+from dash import dcc, html
+
+from app.routing_review import _run_routing_review
 from app.routing_state import routing_state
 from app.state import app_state
-from app.routing_review import _run_routing_review
-
+from config.preset_loader import list_yaml_presets
+from config.routing_thresholds import RoutingThresholds
 
 THRESHOLD_FIELDS = [
     ("max_h_ratio", "Max H Ratio (WL gate)", "0.01", "0.99", "0.01"),
@@ -264,7 +266,9 @@ def create_routing_config_tab():
 
 def register_routing_config_callbacks(app):
     """Register all callbacks for the routing Configuration tab."""
-    from dash import Input, Output, State, ctx as dash_ctx, no_update
+    from dash import Input, Output, State, no_update
+    from dash import ctx as dash_ctx
+
     from config.preset_loader import load_preset_yaml
 
     # --- 1. Regex preview / loaded-nets status (cheap, no thresh updates) ---
@@ -275,11 +279,10 @@ def register_routing_config_callbacks(app):
          Output("routing-config-status", "children")],
         [Input("golden-regex", "value"),
          Input("batch-regex", "value"),
-         # Hook into tab-switch + interval so loaded-nets status refreshes
          Input("tabs", "value"),
-         Input("interval-component", "n_intervals")],
+         Input("nets-meta-store", "data")],
     )
-    def _refresh_previews(golden_re, batch_re, tab, _n):
+    def _refresh_previews(golden_re, batch_re, tab, _nets_meta):
         # Only run when this tab is visible (cheap) — otherwise no_update
         if tab not in (None, "tab-routing-config"):
             return no_update, no_update, no_update, no_update

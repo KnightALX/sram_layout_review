@@ -29,20 +29,21 @@ pip install -r requirements.txt
 ./start.sh 8080                  # alternate port
 python layout_review_app.py 8080
 
-# Tests
-python tests/run_tests.py            # functional tests + a few unittest modules
-python tests/run_tests.py --unit     # only unittest-style tests in tests/
-python tests/run_tests.py --all      # functional + unit
-python -m pytest tests/              # recommended for the pytest-style modules
-python -m pytest tests/test_routing_metrics.py::test_compute_for_net_returns_all_six_metrics   # one test
-python run_routing_check_tests.py    # RoutingCheckEngine unit tests (uses exec-hack to bypass core/__init__.py)
+# Tests (canonical entry point)
+python -m pytest tests/ -q
+python -m pytest tests/ --cov=core --cov=rules --cov-fail-under=60
+python -m pytest tests/test_routing_metrics.py::test_compute_for_net_returns_all_six_metrics
+pytest tests/test_rules_integration.py
 
-# Lint/format: no project config — repo has no pyproject.toml, no pre-commit.
-# Use whatever your environment provides (e.g. `python -m pyflakes .`).
+# Lint
+python -m ruff check .
+
+# Deprecated — emits DeprecationWarning
+python tests/run_tests.py
 ```
 
-There is no `conftest.py`, `pytest.ini`, or `pyproject.toml`. Newer tests
-expect to be run from the repo root with `sys.path.insert(0, '.')`.
+`pyproject.toml` configures pytest (`pythonpath = ["."]`), ruff, and coverage.
+`tests/conftest.py` provides shared fixtures. CI: `.github/workflows/test.yml`.
 
 ## High-Level Architecture
 
@@ -53,9 +54,13 @@ expect to be run from the repo root with `sys.path.insert(0, '.')`.
 | `layout_review_app.py` | Dash entry point. Builds the app, registers two callback groups (legacy + routing), serves the 4-tab UI. |
 | `review_engine.py` | Legacy full-pipeline engine. Defines `Point`, `Polygon`, `Via`, `WireSegment`, `NetRCData`, `Violation`, `ReviewSummary`, `ProfessionalLayoutReviewEngine`. Also RC calculation, EM analysis, BL/BLB matching. |
 | `config_system.py` | Legacy config dataclasses: `CheckRule`, `TechConfig`, `LayoutReviewConfig`, and preset factories `get_sram_7nm_config()`, `get_sram_5nm_config()`, `get_analog_config()`. |
-| `report_generator.py` | Legacy PPTX/PDF report (uses legacy engine output). |
+| `report_generator.py` | Legacy report shim → `report/pptx_legacy.py`, `report/pdf_legacy.py`. |
+| `report/routing_pptx.py` | Routing Review tab PPTX output. |
+| `core/geometry.py` | Polygon/segment distance helpers (used by `review_engine`). |
+| `core/layer_style.py` | Centralized layer fill colors for viz + reports. |
+| `pdk/sram_7nm.yaml` | 7nm PDK layers + design rules; loaded via `config/pdk_loader.py`. |
 | `core/` | Shared analysis modules (no dependencies on Dash). |
-| `core/routing_check.py` | Self-contained `RoutingCheckEngine` with its own `Violation`/`RoutingCheckResult` types (NOT used by the routing review tab — see `core/routing_metrics` below). |
+| `rules/` | Plugin rule system — **wired** into `review_engine._execute_check_rule` via `create_rule()`. |
 | `core/routing_metrics.py` | The 6-metric aggregator actually used by the Routing Review tab. Calls `core.directional_analyzer`, `core.via_coverage`, `core.rc_calculator.compute_net_metrics_with_tau`, and `core.golden_similarity`. |
 | `core/rc_calculator.py`, `directional_analyzer.py`, `via_coverage.py`, `golden_similarity.py`, `effective_tau.py`, `matching_analyzer.py`, `data_parsing.py`, `visualization.py`, `path_analysis.py`, `report_visualization.py` | Individual analyzers. |
 | `config/routing_thresholds.py` | `RoutingThresholds` dataclass + 4 built-in presets (`sram_7nm_wl`, `sram_5nm_io_bl`, `analog_default`, `power_relaxed`). `validate()` enforces `max_h_ratio + max_v_ratio ≥ 1.0`. |
@@ -66,12 +71,44 @@ expect to be run from the repo root with `sys.path.insert(0, '.')`.
 | `app/routing_config.py` | Routing Config tab UI + `register_routing_config_callbacks`. |
 | `app/routing_review.py` | Routing Review tab UI + `_run_routing_review()` + `register_routing_review_callbacks`. The 6-metric cards, sortable table, and PPTX download button live here. |
 | `app/layout.py`, `app/callbacks.py`, `app/theme.py` | Legacy tab layout and callbacks (Layout View, Report Export, right-panel Properties). |
-| `report/routing_pptx.py` | PPTX output for the routing review tab. |
+
 | `rules/base_rule.py` | `BaseRule`, `ConstraintType`, `Severity`, `RuleParameter`. `matches_net()` uses regex against `TARGET_NETS`. |
 | `rules/registry.py` | `RuleRegistry` singleton + `@register_rule(category)` decorator. |
 | `rules/{drc,si,em,sram,qty}/__init__.py` | **All rules for a category live in one file each** (see "Rule plugin quirk" below). |
 | `tests/` | Mixed unittest + pytest. Fixture shape files are `shapes_test_*.txt` next to the test code. |
-| `assets/` | Local Bootstrap + Font Awesome CSS (used because the app avoids CDN at runtime). |
+| `assets/` | Local Bootstrap + Font Awesome CSS + `eda-theme.css` (Dash avoids CDN at runtime). |
+
+### Architecture (dual pipeline)
+
+```mermaid
+flowchart LR
+  subgraph input [Input]
+    TXT[shape .txt files]
+    YAML[batch YAML]
+  end
+
+  subgraph shared [Shared]
+    PARSE[core.data_parsing]
+    STATE[app_state.nets_data]
+  end
+
+  subgraph legacy [Legacy Full Review]
+    ENGINE[review_engine]
+    RULES[rules/ plugins]
+    LEGRPT[report/pptx_legacy + pdf_legacy]
+  end
+
+  subgraph routing [Routing Review]
+    RCFG[routing_state thresholds]
+    METRICS[core.routing_metrics 6-metric]
+    RPT[report/routing_pptx]
+  end
+
+  TXT --> PARSE --> STATE
+  YAML --> PARSE
+  STATE --> ENGINE --> RULES --> LEGRPT
+  STATE --> RCFG --> METRICS --> RPT
+```
 
 ### Data flow — routing review (the default path)
 
@@ -110,7 +147,10 @@ Edit the relevant `rules/{drc,si,em,sram,qty}/__init__.py`, add a class with `RU
 
 ## Notes / gotchas
 
-- `core/__init__.py` re-exports many submodules. Some test files (`tests/test_routing_check.py`, `run_routing_check_tests.py`) avoid triggering that re-export chain by loading `review_engine` and `core.routing_check` directly via `importlib.util.spec_from_file_location`. If a new test fails with an import error from `core/__init__.py`, follow the same pattern.
-- `app.routing_review._run_routing_review` always passes `vias=[]` to `compute_for_net` (with a comment about wiring up via support later) — current routing review does not see real via coverage; the placeholder `via_coverage` value comes from the polygon-overlap heuristic.
+- **2026-06-21 governance:** `rules/` plugin path active in full review; `routing_check.py` and `rc_prediction.py` removed; `suppress_callback_exceptions=False`; upload writes `nets-meta-store`; Phase 4 module split (`geometry`, `layer_style`, `report/*_legacy`, `pdk/sram_7nm.yaml`); Phase 5: ruff + pytest coverage gate (60%) + GitHub Actions CI.
+- RC Prediction tab removed (2026-06-20). `routing_state.get_rc_model()` uses built-in `RCModelConfig` defaults.
+- `split_metal_via_polygons()` / `coerce_vias()` in `core/routing_metrics.py` — used by routing review and legacy upload via `_rebuild_engine_from_nets()`.
+- Full Review: `btn-run-review-panel` sets `app_state.review_completed`; Report Export requires it.
 - `review_engine.calculate_net_rc` is invoked on upload even for nets the user never reviews; this is intentional so right-panel properties are populated immediately.
-- `config_system.py` lives at the repo root (not under `config/`) — the `config/` package holds only the routing-threshold YAML loader. Don't move it.
+- `config_system.py` lives at the repo root (not under `config/`). The `config/` package holds routing-threshold YAML (`preset_loader.py`) and PDK YAML (`pdk_loader.py`). Don't move `config_system.py`.
+- `TechConfig.get_default_7nm()` loads from `pdk/sram_7nm.yaml`; inline fallback is `TechConfig._get_default_7nm_inline()`.

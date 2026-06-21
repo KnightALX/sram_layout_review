@@ -4,14 +4,39 @@ import base64
 import os
 import re
 
-from dash import Dash, html, Input, Output, State, callback_context
-from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
+from dash import Dash, Input, Output, State, callback_context, html
+from dash.exceptions import PreventUpdate
 
 from app.state import app_state
-from core.data_parsing import parse_shape_txt, import_shape_from_file
-from core.visualization import create_net_visualization
+from core.data_parsing import import_shape_from_file, parse_shape_txt
 from core.path_analysis import get_view_for_visible_layers
+from core.visualization import create_net_visualization
+
+
+def _rebuild_engine_from_nets():
+    """Rebuild legacy review engine from uploaded nets, including via extraction."""
+    from core.routing_metrics import coerce_vias, split_metal_via_polygons
+    from review_engine import ProfessionalLayoutReviewEngine
+
+    if not app_state.nets_data:
+        app_state.engine = None
+        return
+
+    app_state.engine = ProfessionalLayoutReviewEngine(app_state.config)
+    tech_layers = app_state.config.tech_config.layers
+    for net_name, data in app_state.nets_data.items():
+        polygons = data['polygons']
+        app_state.engine.add_net_polygons(net_name, polygons)
+        _, via_polys = split_metal_via_polygons(polygons)
+        vias = coerce_vias(via_polys, tech_layers)
+        app_state.engine.set_net_vias(net_name, vias)
+        app_state.engine.calculate_net_rc(net_name)
+
+
+def _nets_meta_payload():
+    names = sorted(app_state.nets_data.keys(), key=natural_sort_key)
+    return {'count': len(names), 'names': names}
 
 
 def natural_sort_key(s):
@@ -38,7 +63,8 @@ def register_callbacks(app: Dash):
          Output('yaml-upload-status', 'children'),
          Output('net-selector', 'options'),
          Output('net-selector', 'value'),
-         Output('net-count-badge', 'children')],
+         Output('net-count-badge', 'children'),
+         Output('nets-meta-store', 'data')],
         [Input('upload-data', 'contents'),
          Input('upload-yaml', 'contents'),
          Input('net-filter', 'value'),
@@ -81,19 +107,13 @@ def register_callbacks(app: Dash):
                     print(f"Error importing {filename}: {e}")
 
             if app_state.nets_data:
-                from review_engine import ProfessionalLayoutReviewEngine
-                app_state.engine = ProfessionalLayoutReviewEngine(app_state.config)
-                for net_name, data in app_state.nets_data.items():
-                    app_state.engine.add_net_polygons(net_name, data['polygons'])
-                # Calculate RC for all imported nets
-                for net_name in app_state.nets_data.keys():
-                    app_state.engine.calculate_net_rc(net_name)
+                _rebuild_engine_from_nets()
 
             status = f"Imported {imported} files"
             options = [{'label': name, 'value': name} for name in
                        sorted(app_state.nets_data.keys(), key=natural_sort_key)]
 
-            return status, "", options, [], f"{len(app_state.nets_data)} nets"
+            return status, "", options, [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
         # Handle YAML batch import
         if trigger_id == 'upload-yaml':
@@ -107,20 +127,20 @@ def register_callbacks(app: Dash):
                 try:
                     import yaml
                 except ImportError:
-                    return "", "PyYAML not installed. Run: pip install pyyaml", [], [], "0 nets"
+                    return "", "PyYAML not installed. Run: pip install pyyaml", [], [], "0 nets", _nets_meta_payload()
 
                 # Handle empty YAML content
                 if not decoded.strip():
-                    return "", "Error: YAML file is empty", [], [], "0 nets"
+                    return "", "Error: YAML file is empty", [], [], "0 nets", _nets_meta_payload()
 
                 yaml_config = yaml.safe_load(decoded)
 
                 # Validate yaml_config is a dict with 'shapes'
                 if not isinstance(yaml_config, dict):
-                    return "", "Error: Invalid YAML format - expected a dictionary", [], [], "0 nets"
+                    return "", "Error: Invalid YAML format - expected a dictionary", [], [], "0 nets", _nets_meta_payload()
 
                 if 'shapes' not in yaml_config:
-                    return "", "Error: Missing 'shapes' key in YAML", [], [], "0 nets"
+                    return "", "Error: Missing 'shapes' key in YAML", [], [], "0 nets", _nets_meta_payload()
 
                 options_cfg = yaml_config.get('options', {})
                 auto_prefix = options_cfg.get('auto_prefix', '')
@@ -152,7 +172,7 @@ def register_callbacks(app: Dash):
                         if skip_missing:
                             continue
                         else:
-                            return "", f"File not found: {filepath}", [], [], f"{len(app_state.nets_data)} nets"
+                            return "", f"File not found: {filepath}", [], [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
                     if custom_net_name and auto_prefix:
                         custom_net_name = auto_prefix + custom_net_name
@@ -169,13 +189,7 @@ def register_callbacks(app: Dash):
                         failed_files.append(os.path.basename(filepath))
 
                 if app_state.nets_data:
-                    from review_engine import ProfessionalLayoutReviewEngine
-                    app_state.engine = ProfessionalLayoutReviewEngine(app_state.config)
-                    for net_name, data in app_state.nets_data.items():
-                        app_state.engine.add_net_polygons(net_name, data['polygons'])
-                    # Calculate RC for all imported nets
-                    for net_name in app_state.nets_data.keys():
-                        app_state.engine.calculate_net_rc(net_name)
+                    _rebuild_engine_from_nets()
 
                 # Build informative status message
                 total = len(shapes_list)
@@ -187,14 +201,14 @@ def register_callbacks(app: Dash):
                 options = [{'label': name, 'value': name} for name in
                           sorted(app_state.nets_data.keys(), key=natural_sort_key)]
 
-                return "", yaml_status, options, [], f"{len(app_state.nets_data)} nets"
+                return "", yaml_status, options, [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
             except yaml.YAMLError as e:
                 error_msg = f"YAML parse error: {str(e)[:100]}"
-                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets"
+                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
             except Exception as e:
                 error_msg = f"Error: {str(e)[:100]}"
-                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets"
+                return "", error_msg, [], [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
         # Handle filter, select all, clear
         all_nets = sorted(app_state.nets_data.keys(), key=natural_sort_key)
@@ -209,15 +223,15 @@ def register_callbacks(app: Dash):
             else:
                 filtered = all_nets
             options = [{'label': n, 'value': n} for n in filtered]
-            return "", "", options, [], f"{len(app_state.nets_data)} nets"
+            return "", "", options, [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
         elif trigger_id == 'btn-select-all':
             options = [{'label': n, 'value': n} for n in all_nets]
-            return "", "", options, all_nets, f"{len(app_state.nets_data)} nets"
+            return "", "", options, all_nets, f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
         elif trigger_id == 'btn-clear':
             options = [{'label': n, 'value': n} for n in all_nets]
-            return "", "", options, [], f"{len(app_state.nets_data)} nets"
+            return "", "", options, [], f"{len(app_state.nets_data)} nets", _nets_meta_payload()
 
         raise PreventUpdate
 
@@ -472,8 +486,34 @@ def register_callbacks(app: Dash):
                 tau_rc, tpd,
                 critical, warnings, info)
 
-    # =========================================================================
-    # Configuration Tab Callbacks
+    @app.callback(
+        [Output('prop-critical', 'children'),
+         Output('prop-warnings', 'children'),
+         Output('prop-info', 'children'),
+         Output('output-log', 'children')],
+        Input('btn-run-review-panel', 'n_clicks'),
+        prevent_initial_call=True,
+    )
+    def run_full_review_panel(n_clicks):
+        """Run legacy full review from the right panel."""
+        if not n_clicks or not app_state.engine:
+            raise PreventUpdate
+        try:
+            summary = app_state.engine.run_full_review()
+            app_state.review_completed = True
+            log = html.Div(
+                f"Full review complete: {summary.total_violations} violations "
+                f"across {summary.total_nets} nets."
+            )
+            return (
+                str(summary.critical_count),
+                str(summary.warning_count),
+                str(summary.info_count),
+                log,
+            )
+        except Exception as e:
+            return '0', '0', '0', html.Div(f"Review error: {e}", className='text-fail')
+
     # =========================================================================
     # Export Callbacks
     # =========================================================================
@@ -489,14 +529,17 @@ def register_callbacks(app: Dash):
         if not ctx.triggered:
             raise PreventUpdate
 
-        trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        ctx.triggered[0]['prop_id'].split('.')[0]
 
         n_clicks = btn_clicks
         if not n_clicks or not app_state.engine:
             raise PreventUpdate
 
         if not app_state.review_completed:
-            return html.Div("Please run a review first before generating reports.", className="alert alert-warning")
+            return html.Div(
+                "Please run Full Review from the Layout View panel first.",
+                className="alert alert-warning",
+            )
 
         # Resolve output directory with fallback to ./output, guard against path traversal
         output_dir = (output_dir_input or "").strip() or "./output"
@@ -534,7 +577,5 @@ def register_callbacks(app: Dash):
     # ---------------------------------------------------------------------
     from app.routing_config import register_routing_config_callbacks
     from app.routing_review import register_routing_review_callbacks
-    from app.rc_prediction import register_rc_prediction_callbacks
     register_routing_config_callbacks(app)
     register_routing_review_callbacks(app)
-    register_rc_prediction_callbacks(app)

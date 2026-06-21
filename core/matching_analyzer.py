@@ -4,11 +4,9 @@ Matching Analyzer - SRAM信号匹配分析
 用于BL/BLB、WL等差分对的匹配度量化分析
 """
 
-import math
-from dataclasses import dataclass, field
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Tuple
 
-from review_engine import Point, Polygon, MatchingAnalysis, NetRCData
+from review_engine import MatchingAnalysis, NetRCData, Point, Polygon
 
 
 def analyze_pair_matching(

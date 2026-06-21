@@ -1,7 +1,8 @@
 """Tests for routing PPTX report."""
 import os
-import tempfile
 import sys
+import tempfile
+
 sys.path.insert(0, '.')
 from app.routing_state import RoutingState
 from report.routing_pptx import generate_routing_pptx

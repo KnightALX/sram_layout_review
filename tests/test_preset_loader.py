@@ -1,9 +1,7 @@
 """Tests for preset YAML loader."""
-import os
 import pytest
-from config.preset_loader import (
-    load_preset_yaml, save_preset_yaml, list_yaml_presets
-)
+
+from config.preset_loader import list_yaml_presets, load_preset_yaml, save_preset_yaml
 from config.routing_thresholds import RoutingThresholds
 
 

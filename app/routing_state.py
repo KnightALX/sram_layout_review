@@ -4,10 +4,12 @@ Kept separate from `app/state.py` (the original global state) so the
 routing rewrite does not affect the existing tabs.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
-from config.routing_thresholds import RoutingThresholds
+from typing import Any, Dict, List, Optional
+
 from app.rc_model import RCModelConfig
+from config.routing_thresholds import RoutingThresholds
 
 
 @dataclass

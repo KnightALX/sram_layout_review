@@ -11,9 +11,10 @@ Algorithm:
 - Per-polygon classification: H if h_ratio ≥ 0.75, V if v_ratio ≥ 0.75, else MIXED.
 """
 from __future__ import annotations
+
 import math
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List
 
 if TYPE_CHECKING:
     from review_engine import Polygon

@@ -4,9 +4,10 @@ Defines the gating thresholds for the 6 routing-quality metrics.
 Used by Configuration tab (load/save YAML) and Layout Review tab (gate check).
 """
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 
 class NetClass(str, Enum):

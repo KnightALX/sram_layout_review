@@ -6,85 +6,16 @@ This module provides standalone visualization functions that don't rely
 on app_state, making them suitable for report generation.
 """
 
-import io
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
-
-# ============================================================================
-# Layer Color Definitions - Matching visualization.py
-# ============================================================================
-
-METAL_LAYER_COLORS = {
-    'm0': 'rgba(0, 128, 128, 0.70)',
-    'met0': 'rgba(0, 128, 128, 0.70)',
-    'm1': 'rgba(30, 144, 255, 0.70)',
-    'met1': 'rgba(30, 144, 255, 0.70)',
-    'metal1': 'rgba(30, 144, 255, 0.70)',
-    'met1a': 'rgba(30, 144, 255, 0.70)',
-    'm2': 'rgba(255, 140, 0, 0.70)',
-    'met2': 'rgba(255, 140, 0, 0.70)',
-    'metal2': 'rgba(255, 140, 0, 0.70)',
-    'met2a': 'rgba(255, 140, 0, 0.70)',
-    'm3': 'rgba(147, 112, 219, 0.70)',
-    'met3': 'rgba(147, 112, 219, 0.70)',
-    'metal3': 'rgba(147, 112, 219, 0.70)',
-    'met3a': 'rgba(147, 112, 219, 0.70)',
-    'm4': 'rgba(255, 105, 180, 0.70)',
-    'met4': 'rgba(255, 105, 180, 0.70)',
-    'metal4': 'rgba(255, 105, 180, 0.70)',
-    'met4a': 'rgba(255, 105, 180, 0.70)',
-    'm5': 'rgba(0, 206, 209, 0.70)',
-    'met5': 'rgba(0, 206, 209, 0.70)',
-    'metal5': 'rgba(0, 206, 209, 0.70)',
-    'met5a': 'rgba(0, 206, 209, 0.70)',
-    'm6': 'rgba(160, 82, 45, 0.70)',
-    'met6': 'rgba(160, 82, 45, 0.70)',
-    'metal6': 'rgba(160, 82, 45, 0.70)',
-    'met6a': 'rgba(160, 82, 45, 0.70)',
-    'm7': 'rgba(107, 142, 35, 0.70)',
-    'met7': 'rgba(107, 142, 35, 0.70)',
-    'metal7': 'rgba(107, 142, 35, 0.70)',
-    'met7a': 'rgba(107, 142, 35, 0.70)',
-}
-
-VIA_LAYER_COLORS = {
-    'via0': 'rgba(0, 100, 0, 0.85)',
-    'v0': 'rgba(0, 100, 0, 0.85)',
-    'via1': 'rgba(0, 0, 139, 0.85)',
-    'v1': 'rgba(0, 0, 139, 0.85)',
-    'via2': 'rgba(210, 105, 30, 0.85)',
-    'v2': 'rgba(210, 105, 30, 0.85)',
-    'via3': 'rgba(75, 0, 130, 0.85)',
-    'v3': 'rgba(75, 0, 130, 0.85)',
-    'via4': 'rgba(199, 21, 133, 0.85)',
-    'v4': 'rgba(199, 21, 133, 0.85)',
-    'via5': 'rgba(0, 139, 139, 0.85)',
-    'v5': 'rgba(0, 139, 139, 0.85)',
-    'via6': 'rgba(101, 67, 33, 0.85)',
-    'v6': 'rgba(101, 67, 33, 0.85)',
-}
-
-LAYER_COLORS = {}
-LAYER_COLORS.update(METAL_LAYER_COLORS)
-LAYER_COLORS.update(VIA_LAYER_COLORS)
-
-DEFAULT_METAL_COLOR = 'rgba(100, 100, 100, 0.70)'
-DEFAULT_VIA_COLOR = 'rgba(80, 80, 80, 0.85)'
+from core.layer_style import get_report_layer_color, is_via_layer
 
 
 def get_layer_color(layer_name: str) -> str:
     """Get fill color for a layer."""
-    layer_lower = layer_name.lower()
-    return LAYER_COLORS.get(layer_lower, DEFAULT_METAL_COLOR if 'met' in layer_lower or 'm' in layer_lower else DEFAULT_VIA_COLOR)
-
-
-def is_via_layer(layer_name: str) -> bool:
-    """Check if a layer is a via layer."""
-    layer_lower = layer_name.lower()
-    return layer_lower.startswith('via') or layer_lower.startswith('v')
+    return get_report_layer_color(layer_name)
 
 
 def create_polygons_figure(

@@ -19,10 +19,11 @@ import sys
 # Third-party imports
 from dash import Dash
 
+from app.callbacks import register_callbacks
+from app.layout import create_layout
+
 # Application imports
 from app.theme import FULL_CSS
-from app.layout import create_layout
-from app.callbacks import register_callbacks
 
 
 def create_app() -> Dash:
@@ -45,9 +46,7 @@ def create_app() -> Dash:
     app = Dash(
         __name__,
         external_stylesheets=external_stylesheets if external_stylesheets else None,
-        # Allow pre-existing callbacks to reference components that were
-        # removed in the routing-review rewrite (e.g. old rules-editor UI).
-        suppress_callback_exceptions=True,
+        suppress_callback_exceptions=False,
     )
 
     app.title = "Layout Review Pro"

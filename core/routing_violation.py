@@ -1,8 +1,9 @@
 """Structured routing violations with location info for visualization."""
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
+
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class ViolationKind(str, Enum):
@@ -51,7 +52,7 @@ class RoutingViolation:
 
     # ---------- Factory helpers ----------
     @classmethod
-    def h_ratio(cls, net_name, h_ratio, limit):
+    def h_ratio(cls, net_name, h_ratio, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.H_RATIO, net_name=net_name,
             h_ratio=h_ratio, limit=limit,
@@ -59,7 +60,7 @@ class RoutingViolation:
         )
 
     @classmethod
-    def v_ratio(cls, net_name, v_ratio, limit):
+    def v_ratio(cls, net_name, v_ratio, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.V_RATIO, net_name=net_name,
             v_ratio=v_ratio, limit=limit,
@@ -67,7 +68,7 @@ class RoutingViolation:
         )
 
     @classmethod
-    def r_total(cls, net_name, r_total, limit):
+    def r_total(cls, net_name, r_total, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.R_TOTAL, net_name=net_name,
             r_total=r_total, limit=limit,
@@ -75,7 +76,7 @@ class RoutingViolation:
         )
 
     @classmethod
-    def c_total(cls, net_name, c_total, limit):
+    def c_total(cls, net_name, c_total, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.C_TOTAL, net_name=net_name,
             c_total=c_total, limit=limit,
@@ -83,7 +84,7 @@ class RoutingViolation:
         )
 
     @classmethod
-    def tau_ps(cls, net_name, tau_ps, limit):
+    def tau_ps(cls, net_name, tau_ps, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.TAU_PS, net_name=net_name,
             tau_ps=tau_ps, limit=limit,
@@ -91,7 +92,7 @@ class RoutingViolation:
         )
 
     @classmethod
-    def via_coverage(cls, net_name, via_coverage, limit):
+    def via_coverage(cls, net_name, via_coverage, limit):  # noqa: F811
         return cls(
             kind=ViolationKind.VIA_COVERAGE, net_name=net_name,
             via_coverage=via_coverage, limit=limit,

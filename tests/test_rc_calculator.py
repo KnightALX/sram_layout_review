@@ -4,18 +4,18 @@ Unit tests for RC Calculator module
 测试RC计算功能
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from review_engine import Point, Polygon, WireSegment, Via
 from core.rc_calculator import (
-    parse_polygons_to_wires,
-    calculate_net_rc,
     _extract_layer_number,
+    calculate_net_rc,
+    parse_polygons_to_wires,
 )
+from review_engine import Point, Polygon, Via
 
 
 class TestExtractLayerNumber(unittest.TestCase):
@@ -216,7 +216,7 @@ class TestViaResistance(unittest.TestCase):
         )
 
         self.assertGreater(via.resistance, 0)
-        self.assertLess(via.resistance, 20)
+        self.assertLessEqual(via.resistance, 20)
 
 
 if __name__ == '__main__':

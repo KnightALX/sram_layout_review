@@ -4,8 +4,9 @@ DRC Rules - 设计规则检查
 包含最小宽度、最小间距、通孔缺失等检查
 """
 
-from typing import List, Dict
-from rules.base_rule import BaseRule, ConstraintType, Severity, RuleParameter
+from typing import Dict, List
+
+from rules.base_rule import BaseRule, ConstraintType, RuleParameter, Severity
 from rules.registry import register_rule
 
 
@@ -106,7 +107,7 @@ class MinSpaceRule(BaseRule):
                         'net_name': net_name,
                         'severity': self.severity,
                         'type': 'DRC',
-                        'message': f"Space violation between layers on same net",
+                        'message': "Space violation between layers on same net",
                         'location': poly1.center,
                         'polygons': [poly1, poly2],
                         'suggestion': "增加走线间距至工艺最小值以上",

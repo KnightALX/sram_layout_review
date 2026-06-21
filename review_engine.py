@@ -12,27 +12,18 @@ Professional Layout Review Engine
 6. 违规分级和统计
 """
 
-import os
-import re
-import math
-import json
-import warnings
-from dataclasses import dataclass, field
-from typing import List, Dict, Tuple, Optional, Set, Callable
-from collections import defaultdict
-from enum import Enum
 import heapq
+import math
+import re
+import warnings
+from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Set, Tuple
 
-import numpy as np
+from config_system import CheckRule, LayoutReviewConfig, get_sram_7nm_config
+from rules.base_rule import Severity
 
 warnings.filterwarnings('ignore')
-
-from rules.base_rule import ConstraintType, Severity
-from config_system import (
-    LayoutReviewConfig, CheckRule,
-    TechConfig, get_sram_7nm_config
-)
-
 
 # ============================================================================
 # 数据模型
@@ -43,51 +34,51 @@ class Point:
     """2D点"""
     x: float
     y: float
-    
+
     def __add__(self, other: 'Point') -> 'Point':
         return Point(self.x + other.x, self.y + other.y)
-    
+
     def __sub__(self, other: 'Point') -> 'Point':
         return Point(self.x - other.x, self.y - other.y)
-    
+
     def distance_to(self, other: 'Point') -> float:
         return math.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
-    
+
     def to_tuple(self) -> Tuple[float, float]:
         return (self.x, self.y)
 
 
-@dataclass  
+@dataclass
 class Polygon:
     """多边形"""
     points: List[Point]
     layer: str
     net_name: str = ""
     shape_id: int = 0
-    
+
     @property
     def bbox(self) -> Tuple[float, float, float, float]:
         """边界框 (xmin, ymin, xmax, ymax)"""
         xs = [p.x for p in self.points]
         ys = [p.y for p in self.points]
         return (min(xs), min(ys), max(xs), max(ys))
-    
+
     @property
     def center(self) -> Point:
         """几何中心"""
         bbox = self.bbox
         return Point((bbox[0] + bbox[2])/2, (bbox[1] + bbox[3])/2)
-    
+
     @property
     def width(self) -> float:
         bbox = self.bbox
         return bbox[2] - bbox[0]
-    
+
     @property
     def height(self) -> float:
         bbox = self.bbox
         return bbox[3] - bbox[1]
-    
+
     @property
     def area(self) -> float:
         """面积 (Shoelace公式)"""
@@ -100,7 +91,7 @@ class Polygon:
             area += self.points[i].x * self.points[j].y
             area -= self.points[j].x * self.points[i].y
         return abs(area) / 2.0
-    
+
     @property
     def perimeter(self) -> float:
         """周长"""
@@ -112,7 +103,7 @@ class Polygon:
             j = (i + 1) % n
             perim += self.points[i].distance_to(self.points[j])
         return perim
-    
+
     @property
     def edge_lengths(self) -> List[float]:
         """各边长度"""
@@ -122,7 +113,7 @@ class Polygon:
             j = (i + 1) % n
             lengths.append(self.points[i].distance_to(self.points[j]))
         return lengths
-    
+
     @property
     def main_axis(self) -> str:
         """主方向 (horizontal/vertical)"""
@@ -229,21 +220,21 @@ class Polygon:
         """检查是否与另一个多边形相交"""
         b1 = self.bbox
         b2 = other.bbox
-        return not (b1[2] < b2[0] or b1[0] > b2[2] or 
+        return not (b1[2] < b2[0] or b1[0] > b2[2] or
                    b1[3] < b2[1] or b1[1] > b2[3])
-    
+
     def overlap_area(self, other: 'Polygon') -> float:
         """计算与另一个多边形的重叠面积 (简化版)"""
         if not self.intersects(other):
             return 0.0
-        
+
         # 简化计算：使用bbox交集作为近似
         b1 = self.bbox
         b2 = other.bbox
-        
+
         x_overlap = max(0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
         y_overlap = max(0, min(b1[3], b2[3]) - max(b1[1], b2[1]))
-        
+
         return x_overlap * y_overlap
 
 
@@ -295,24 +286,24 @@ class WireSegment:
     layer: str
     width: float
     net_name: str = ""
-    
+
     @property
     def length(self) -> float:
         return self.start.distance_to(self.end)
-    
+
     @property
     def direction(self) -> str:
         dx = abs(self.end.x - self.start.x)
         dy = abs(self.end.y - self.start.y)
         return 'horizontal' if dx > dy else 'vertical'
-    
+
     def resistance(self, r_per_sq: float) -> float:
         """计算电阻"""
         if self.width > 0:
             squares = self.length / self.width
             return r_per_sq * squares
         return float('inf')
-    
+
     def capacitance(self, c_per_um: float, fringe_c: float = 0.1) -> float:
         """计算电容 (包含边缘电容)。
 
@@ -357,10 +348,8 @@ class NetRCData:
     via_count: int = 0
     layer_usage: Dict[str, int] = field(default_factory=dict)
 
-    # 时序分析 (单位: ps)
-    # 注意: R (Ω) × C (fF) 物理上等于 1 ps (1 Ω·fF = 10⁻¹⁵ s = 1 ps)
-    # 过去使用 1e-9 换算系数,导致结果小 6 个数量级,显示为 0.000
-    tau_rc: float = 0.0                 # RC时间常数 (ps) - tau = R * C
+    # 时序分析 (单位: ps) — τ = R(Ω) × C(fF) × 1e-3 via core.effective_tau
+    tau_rc: float = 0.0                 # RC时间常数 (ps)
     trise: float = 0.0                  # 信号上升时间 (ps)
     tfall: float = 0.0                  # 信号下降时间 (ps)
     tpd_50: float = 0.0                # 传播延迟 50% (ps)
@@ -403,18 +392,18 @@ class MatchingAnalysis:
     net1: str
     net2: str
     match_score: float                  # 0-100
-    
+
     # 详细对比
     length_ratio: float                 # L1/L2
     resistance_ratio: float             # R1/R2
     capacitance_ratio: float            # C1/C2
     via_count_diff: int
-    
+
     # 形状匹配
     bbox_similarity: float              # 0-1
     centroid_distance: float            # μm
     routing_pattern_similarity: float   # 0-1
-    
+
     # 问题列表和详细对比 (有默认值的放最后)
     layer_usage_diff: Dict[str, int] = field(default_factory=dict)
     issues: List[str] = field(default_factory=list)
@@ -446,24 +435,24 @@ class ReviewSummary:
     critical_count: int = 0
     warning_count: int = 0
     info_count: int = 0
-    
+
     # RC统计
     total_resistance_range: Tuple[float, float] = (0, 0)
     total_capacitance_range: Tuple[float, float] = (0, 0)
     avg_resistance: float = 0
     avg_capacitance: float = 0
-    
+
     # 匹配分析
     matching_pairs_analyzed: int = 0
     poor_matching_count: int = 0
-    
+
     # 层使用统计
     layer_usage: Dict[str, int] = field(default_factory=dict)
-    
+
     # 违规分类
     violations_by_type: Dict[str, int] = field(default_factory=dict)
     violations_by_net: Dict[str, int] = field(default_factory=dict)
-    
+
     # 检查规则统计
     rules_triggered: Dict[str, int] = field(default_factory=dict)
 
@@ -474,31 +463,35 @@ class ReviewSummary:
 
 class ProfessionalLayoutReviewEngine:
     """专业级版图Review引擎"""
-    
+
     def __init__(self, config: LayoutReviewConfig = None):
         self.config = config or get_sram_7nm_config()
         self.tech = self.config.tech_config
-        
+
         # 数据存储
         self.nets: Dict[str, List[Polygon]] = {}
         self.net_rc_data: Dict[str, NetRCData] = {}
         self.vias: Dict[str, List[Via]] = {}
-        
+
         # 结果存储
         self.violations: List[Violation] = []
         self.p2p_results: Dict[str, List[P2PResult]] = {}
         self.matching_results: List[MatchingAnalysis] = []
         self.em_results: List[EMResult] = []
-        
+
         # 构建图结构用于P2P分析
         self.net_graphs: Dict[str, Dict] = {}
-    
+
     def add_net_polygons(self, net_name: str, polygons: List[Polygon]):
         """添加net的多边形"""
         for poly in polygons:
             poly.net_name = net_name
         self.nets[net_name] = polygons
-    
+
+    def set_net_vias(self, net_name: str, vias: List[Via]):
+        """Set extracted via objects for a net (used after shape import)."""
+        self.vias[net_name] = vias
+
     def parse_polygons_to_wires(self, net_name: str) -> List[WireSegment]:
         """将多边形解析为走线段 - 用于RC计算。
 
@@ -553,20 +546,18 @@ class ProfessionalLayoutReviewEngine:
         会根据层类型估算R_driver和C_load。
 
         **单位说明**：R 单位是 Ω, C 单位是 fF。
-        物理上 1 Ω·fF = 10⁻¹⁵ s = **1 ps**。
-        因此 tau/tpd 字段直接以 ps 为单位,不需要再乘换算系数。
-        (历史版本曾用 * 1e-9 把结果当作 ns,导致小 6 个数量级,显示为 0.000)
+        τ(ps) = R × C × 1e-3（与 Routing 路径 core.effective_tau 一致）。
 
         Args:
             rc_data: NetRCData对象（会被直接修改）
             polygons: 该net的所有多边形
         """
-        # 单位: R=Ω, C=fF, 结果=ps
+        from core.effective_tau import ohm_ff_to_ps
+
         R_ohm = rc_data.total_resistance
         C_ff = rc_data.total_capacitance
 
-        # 1. RC时间常数 tau_rc = R * C (单位: ps)
-        rc_data.tau_rc = R_ohm * C_ff  # 1 Ω·fF = 1 ps
+        rc_data.tau_rc = ohm_ff_to_ps(R_ohm, C_ff, method="lumped")
 
         # 2. 估算 R_driver 和 C_load
         # 如果存在 poly/gate 层，它们作为后级输入贡献 C_load
@@ -606,14 +597,14 @@ class ProfessionalLayoutReviewEngine:
         # tpd_50% ≈ 0.69 * (R_driver + 0.5 * R_wire) * (C_wire + C_load)
         C_total = C_ff + c_load  # fF
         R_total = r_driver + 0.5 * R_ohm  # Ω
-        rc_data.tpd_50 = 0.69 * R_total * C_total  # 1 Ω·fF = 1 ps
+        rc_data.tpd_50 = 0.69 * ohm_ff_to_ps(R_total, C_total, method="lumped")
 
         # 4. 上升/下降时间
         # trise/tfall ≈ 2.2 * tau_rc (对于 10%-90%)
         # 对于 0%-100% 上升时间，约 2.2 * tau_rc
         rc_data.trise = 2.2 * rc_data.tau_rc
         rc_data.tfall = 2.2 * rc_data.tau_rc
-    
+
     def calculate_p2p_resistance(self, net_name: str,
                                   source: Point, target: Point) -> Optional[P2PResult]:
         """
@@ -828,14 +819,14 @@ class ProfessionalLayoutReviewEngine:
         results.sort(key=lambda x: x.resistance, reverse=True)
 
         return results
-    
+
     def analyze_em(self, net_name: str, estimated_current: float = None) -> List[EMResult]:
         """分析电迁移风险"""
         results = []
         rc_data = self.net_rc_data.get(net_name)
         if not rc_data:
             rc_data = self.calculate_net_rc(net_name)
-        
+
         # 估算电流
         if estimated_current is None:
             # 基于net名称估算
@@ -847,21 +838,21 @@ class ProfessionalLayoutReviewEngine:
                 estimated_current = 2.0   # mA - 字线
             else:
                 estimated_current = 1.0   # mA - 信号
-        
+
         for segment in rc_data.wire_segments:
             layer_info = self.tech.layers.get(segment.layer, {})
             if not layer_info:
                 continue
-            
+
             j_max = layer_info.get('current_density', 10.0)  # mA/μm
             width = segment.width
-            
+
             if width > 0:
                 current_density = estimated_current / width
                 safety_factor = j_max / current_density if current_density > 0 else float('inf')
-                
+
                 em_violation = current_density > j_max * self.tech.design_rules.get('em_safety_factor', 0.8)
-                
+
                 result = EMResult(
                     net_name=net_name,
                     layer=segment.layer,
@@ -874,35 +865,35 @@ class ProfessionalLayoutReviewEngine:
                 )
                 results.append(result)
                 self.em_results.append(result)
-        
+
         return results
-    
+
     def analyze_matching(self, net1: str, net2: str) -> MatchingAnalysis:
         """分析两个net的匹配度"""
         rc1 = self.net_rc_data.get(net1) or self.calculate_net_rc(net1)
         rc2 = self.net_rc_data.get(net2) or self.calculate_net_rc(net2)
-        
+
         polygons1 = self.nets.get(net1, [])
         polygons2 = self.nets.get(net2, [])
-        
+
         # 长度比
         length1 = rc1.total_length
         length2 = rc2.total_length
         length_ratio = length1 / length2 if length2 > 0 else 1.0
-        
+
         # 电阻比
         r1 = rc1.total_resistance
         r2 = rc2.total_resistance
         resistance_ratio = r1 / r2 if r2 > 0 else 1.0
-        
+
         # 电容比
         c1 = rc1.total_capacitance
         c2 = rc2.total_capacitance
         capacitance_ratio = c1 / c2 if c2 > 0 else 1.0
-        
+
         # 通孔数差异
         via_diff = abs(rc1.via_count - rc2.via_count)
-        
+
         # 层使用差异
         all_layers = set(rc1.layer_usage.keys()) | set(rc2.layer_usage.keys())
         layer_diff = {}
@@ -911,12 +902,12 @@ class ProfessionalLayoutReviewEngine:
             cnt2 = rc2.layer_usage.get(layer, 0)
             if cnt1 != cnt2:
                 layer_diff[layer] = cnt2 - cnt1
-        
+
         # 计算匹配分数
         score = 100.0
         issues = []
         suggestions = []
-        
+
         # 长度匹配检查
         max_length_diff = max(length1, length2)
         if max_length_diff > 0:
@@ -926,34 +917,34 @@ class ProfessionalLayoutReviewEngine:
                 score -= penalty
                 issues.append(f"Length mismatch: {abs(length1-length2):.1f}μm ({length_deviation*100:.1f}%)")
                 suggestions.append("Balance wire lengths between matched nets")
-        
+
         # 电阻匹配检查
         r_tolerance = self.tech.design_rules.get('max_rc_variation', 0.1)
         if abs(resistance_ratio - 1.0) > r_tolerance:
             score -= 20
             issues.append(f"Resistance mismatch: R1/R2 = {resistance_ratio:.2f}")
             suggestions.append("Ensure consistent resistance for matched signals")
-        
+
         # 电容匹配检查
         if abs(capacitance_ratio - 1.0) > r_tolerance:
             score -= 15
             issues.append(f"Capacitance mismatch: C1/C2 = {capacitance_ratio:.2f}")
             suggestions.append("Balance capacitive loading")
-        
+
         # 通孔数检查
         if via_diff > 1:
             score -= via_diff * 5
             issues.append(f"Via count difference: {via_diff}")
             suggestions.append("Match via count for symmetry")
-        
+
         # 层使用检查
         if layer_diff:
             score -= len(layer_diff) * 3
             issues.append(f"Layer usage differs: {list(layer_diff.keys())}")
             suggestions.append("Use consistent layer assignments")
-        
+
         score = max(0, min(100, score))
-        
+
         # BBox相似度
         if polygons1 and polygons2:
             bbox1 = self._get_overall_bbox(polygons1)
@@ -961,7 +952,7 @@ class ProfessionalLayoutReviewEngine:
             bbox_sim = self._calculate_bbox_similarity(bbox1, bbox2)
         else:
             bbox_sim = 0.5
-        
+
         # 质心距离
         if polygons1 and polygons2:
             c1 = self._calculate_centroid(polygons1)
@@ -969,7 +960,7 @@ class ProfessionalLayoutReviewEngine:
             centroid_dist = c1.distance_to(c2)
         else:
             centroid_dist = 0
-        
+
         analysis = MatchingAnalysis(
             net1=net1,
             net2=net2,
@@ -985,17 +976,17 @@ class ProfessionalLayoutReviewEngine:
             issues=issues,
             suggestions=suggestions
         )
-        
+
         self.matching_results.append(analysis)
         return analysis
-    
+
     def _get_overall_bbox(self, polygons: List[Polygon]) -> Tuple[float, float, float, float]:
         """获取多边形集合的整体bbox"""
         if not polygons:
             return (0, 0, 0, 0)
         xmins, ymins, xmaxs, ymaxs = zip(*[p.bbox for p in polygons])
         return (min(xmins), min(ymins), max(xmaxs), max(ymaxs))
-    
+
     def _calculate_centroid(self, polygons: List[Polygon]) -> Point:
         """计算多边形集合的质心"""
         if not polygons:
@@ -1012,112 +1003,14 @@ class ProfessionalLayoutReviewEngine:
         return Point(cx, cy)
 
     def _min_polygon_distance(self, poly1: Polygon, poly2: Polygon) -> float:
-        """计算两个多边形之间的最小距离。
-
-        使用bbox近似 + 精确边距离计算的混合方法：
-        1. 先用bbox快速排除不相近的多边形
-        2. 对可能接近的多边形计算精确的边-边距离
-
-        Args:
-            poly1: 第一个多边形
-            poly2: 第二个多边形
-
-        Returns:
-            两个多边形之间的最小距离 (μm)
-        """
-        b1 = poly1.bbox
-        b2 = poly2.bbox
-
-        # 快速检查：基于bbox完全分离的情况
-        # 如果bbox不相交（分离），计算它们之间的最小距离
-        if b1[2] < b2[0] or b2[2] < b1[0] or b1[3] < b2[1] or b2[3] < b1[1]:
-            # bbox在X方向分离
-            if b1[2] < b2[0] or b2[2] < b1[0]:
-                gap_x = max(b1[0] - b2[2], b2[0] - b1[2], 0)
-            else:
-                gap_x = 0
-
-            # bbox在Y方向分离
-            if b1[3] < b2[1] or b2[3] < b1[1]:
-                gap_y = max(b1[1] - b2[3], b2[1] - b1[3], 0)
-            else:
-                gap_y = 0
-
-            if gap_x > 0 and gap_y > 0:
-                return math.sqrt(gap_x * gap_x + gap_y * gap_y)
-            elif gap_x > 0:
-                return gap_x
-            elif gap_y > 0:
-                return gap_y
-            else:
-                return 0.0
-
-        # bbox相交或重叠：计算精确的边-边最小距离
-        min_dist = float('inf')
-
-        def segment_to_segment_dist(p1: Point, p2: Point, p3: Point, p4: Point) -> float:
-            """计算两条线段之间的最小距离"""
-            # 使用变量消除算法求两条线段之间的最短距离
-            d1 = self._point_to_segment_distance(p1, p2, p3)
-            d2 = self._point_to_segment_distance(p1, p2, p4)
-            d3 = self._point_to_segment_distance(p3, p4, p1)
-            d4 = self._point_to_segment_distance(p3, p4, p2)
-            return min(d1, d2, d3, d4)
-
-        # 检查所有边对之间的距离
-        pts1 = poly1.points
-        pts2 = poly2.points
-
-        for i in range(len(pts1)):
-            p1 = pts1[i]
-            p2 = pts1[(i + 1) % len(pts1)]
-
-            for j in range(len(pts2)):
-                p3 = pts2[j]
-                p4 = pts2[(j + 1) % len(pts2)]
-
-                dist = segment_to_segment_dist(p1, p2, p3, p4)
-                min_dist = min(min_dist, dist)
-
-        return min_dist if min_dist < float('inf') else 0.0
+        """计算两个多边形之间的最小距离 (μm)。"""
+        from core.geometry import min_polygon_distance
+        return min_polygon_distance(poly1, poly2)
 
     def _point_to_segment_distance(self, seg_start: Point, seg_end: Point, point: Point) -> float:
-        """计算点到线段的最小距离。
-
-        Args:
-            seg_start: 线段起点
-            seg_end: 线段终点
-            point: 待测点
-
-        Returns:
-            点到线段的最小距离
-        """
-        # 向量 seg_start -> seg_end
-        dx = seg_end.x - seg_start.x
-        dy = seg_end.y - seg_start.y
-
-        # 向量 seg_start -> point
-        px = point.x - seg_start.x
-        py = point.y - seg_start.y
-
-        seg_len_sq = dx * dx + dy * dy
-
-        if seg_len_sq < 1e-10:
-            # 线段退化为点
-            return math.sqrt(px * px + py * py)
-
-        # 投影比例 t (在线段上的位置)
-        t = max(0, min(1, (px * dx + py * dy) / seg_len_sq))
-
-        # 最近点在线段上的位置
-        nearest_x = seg_start.x + t * dx
-        nearest_y = seg_start.y + t * dy
-
-        # 计算距离
-        dist_x = point.x - nearest_x
-        dist_y = point.y - nearest_y
-
-        return math.sqrt(dist_x * dist_x + dist_y * dist_y)
+        """计算点到线段的最小距离。"""
+        from core.geometry import point_to_segment_distance
+        return point_to_segment_distance(seg_start, seg_end, point)
 
     def _calculate_bbox_similarity(self, bbox1: Tuple, bbox2: Tuple) -> float:
         """计算两个bbox的相似度"""
@@ -1125,74 +1018,91 @@ class ProfessionalLayoutReviewEngine:
         h1 = bbox1[3] - bbox1[1]
         w2 = bbox2[2] - bbox2[0]
         h2 = bbox2[3] - bbox2[1]
-        
+
         if w1 + h1 == 0 or w2 + h2 == 0:
             return 0.5
-        
+
         # 尺寸相似度
         size_sim = 1.0 - abs((w1+h1) - (w2+h2)) / max(w1+h1, w2+h2)
-        
+
         # 长宽比相似度
         ar1 = w1 / h1 if h1 > 0 else 1
         ar2 = w2 / h2 if h2 > 0 else 1
         ar_sim = 1.0 - abs(ar1 - ar2) / max(ar1, ar2, 1)
-        
+
         return (size_sim + ar_sim) / 2
-    
+
     def run_full_review(self) -> ReviewSummary:
         """运行完整Review"""
         print("=" * 60)
         print("Professional Layout Review Engine")
         print("=" * 60)
-        
+
         self.violations = []
         self.matching_results = []
         self.em_results = []
-        
+
         # 1. 计算所有net的RC
         print("\n[Phase 1] Calculating RC for all nets...")
         for net_name in self.nets:
             self.calculate_net_rc(net_name)
         print(f"  [OK] Processed {len(self.nets)} nets")
-        
+
         # 2. 运行检查规则
         print("\n[Phase 2] Running check rules...")
         self._run_all_checks()
-        
+
         # 3. 分析匹配对
         print("\n[Phase 3] Analyzing matching pairs...")
         self._analyze_all_matching_pairs()
-        
+
         # 4. EM分析
         print("\n[Phase 4] Running EM analysis...")
         self._run_em_analysis()
-        
+
         # 5. 生成汇总
         print("\n[Phase 5] Generating summary...")
         summary = self._generate_summary()
-        
+
         print("\n" + "=" * 60)
         print("Review Complete!")
         print("=" * 60)
         self._print_summary(summary)
-        
+
         return summary
-    
+
     def _run_all_checks(self):
         """运行所有启用的检查规则"""
-        enabled_rules = self.config.get_enabled_rules()
-        
+        self.config.get_enabled_rules()
+
         for net_name in self.nets:
             applicable_rules = self.config.get_rules_for_net(net_name)
-            
+
             for rule in applicable_rules:
                 self._execute_check_rule(net_name, rule)
-    
+
     def _execute_check_rule(self, net_name: str, rule: CheckRule):
-        """执行单个检查规则"""
+        """Execute a check rule via rules/ plugin when registered, else legacy dispatch."""
         rc_data = self.net_rc_data.get(net_name)
         polygons = self.nets.get(net_name, [])
-        
+
+        import rules  # noqa: F401 — triggers @register_rule discovery
+        from rules.registry import create_rule
+
+        impl = create_rule(rule.rule_id, dict(rule.parameters or {}))
+        if impl is not None:
+            if hasattr(impl, 'matches_net') and not impl.matches_net(net_name):
+                return
+            net_data = rc_data or NetRCData(net_name=net_name)
+            net_data.tech = self.tech.layers
+            for v in impl.check(net_name, net_data, polygons):
+                self._add_violation_from_plugin(rule, v)
+            return
+
+        if rc_data is None:
+            return
+
+        # Legacy fallback for rules not registered in rules/ package
         # DRC001: Minimum Width
         if rule.rule_id == "DRC001":
             for poly in polygons:
@@ -1200,12 +1110,14 @@ class ProfessionalLayoutReviewEngine:
                 min_width = layer_info.get('min_width', 0.032)
                 actual_width = min(poly.width, poly.height)
                 if actual_width < min_width * 0.95:
-                    self._add_violation(rule, net_name, 
+                    self._add_violation(rule, net_name,
                         f"Width violation on {poly.layer}: {actual_width:.4f}μm < {min_width}μm",
                         poly.center, [poly])
-        
+
         # SI001: Long Wire
         elif rule.rule_id == "SI001":
+            from core.rc_calculator import _extract_layer_number
+
             max_lengths = rule.parameters
             for segment in rc_data.wire_segments:
                 # Extract trailing number from layer name using regex
@@ -1218,12 +1130,12 @@ class ProfessionalLayoutReviewEngine:
                     max_len = max_lengths.get('max_length_met34', 200)
                 else:
                     max_len = max_lengths.get('max_length_met56', 300)
-                
+
                 if segment.length > max_len:
                     self._add_violation(rule, net_name,
                         f"Long wire on {segment.layer}: {segment.length:.1f}μm (max {max_len}μm)",
                         segment.start, wire_segments=[segment])
-        
+
         # SI002: High Resistance
         elif rule.rule_id == "SI002":
             max_r = rule.parameters.get('max_resistance', 100)
@@ -1231,7 +1143,7 @@ class ProfessionalLayoutReviewEngine:
                 self._add_violation(rule, net_name,
                     f"High resistance: {rc_data.total_resistance:.1f}Ω (max {max_r}Ω)",
                     related_data={'resistance': rc_data.total_resistance})
-        
+
         # SI003: High Capacitance
         elif rule.rule_id == "SI003":
             max_c = rule.parameters.get('max_capacitance', 500)
@@ -1239,7 +1151,7 @@ class ProfessionalLayoutReviewEngine:
                 self._add_violation(rule, net_name,
                     f"High capacitance: {rc_data.total_capacitance:.1f}fF (max {max_c}fF)",
                     related_data={'capacitance': rc_data.total_capacitance})
-        
+
         # EM002: Power Net Width
         elif rule.rule_id == "EM002":
             min_width = rule.parameters.get('min_power_width', 0.5)
@@ -1248,7 +1160,7 @@ class ProfessionalLayoutReviewEngine:
                     self._add_violation(rule, net_name,
                         f"Power net narrow segment: {segment.width:.3f}μm on {segment.layer}",
                         segment.start, wire_segments=[segment])
-        
+
         # QTY004: Narrow Long Wire
         elif rule.rule_id == "QTY004":
             params = rule.parameters
@@ -1332,7 +1244,7 @@ class ProfessionalLayoutReviewEngine:
                                 # 检查两个层的via
                                 for via in net_vias:
                                     # 检查via是否在重叠区域附近
-                                    via_key = (round(via.position.x, 4), round(via.position.y, 4))
+                                    (round(via.position.x, 4), round(via.position.y, 4))
                                     # 简单检查：via位置是否在两个polygon的中心连线附近
                                     if abs(via.position.x - center1.x) < abs(center1.x - center2.x) * 0.5 and \
                                        abs(via.position.y - center1.y) < abs(center1.y - center2.y) * 0.5:
@@ -1355,7 +1267,7 @@ class ProfessionalLayoutReviewEngine:
         # EM003: Via Current Capacity
         # 检查通孔阵列尺寸是否满足电流承载需求
         elif rule.rule_id == "EM003":
-            min_via_array_size = rule.parameters.get('min_via_array_size', 2)
+            rule.parameters.get('min_via_array_size', 2)
 
             # 估算通过该net的电流（基于net类型）
             if any(kw in net_name.upper() for kw in ['VDD', 'VSS', 'PWR']):
@@ -1374,6 +1286,22 @@ class ProfessionalLayoutReviewEngine:
                     self._add_violation(rule, net_name,
                         f"Via current capacity insufficient: {estimated_current:.1f}mA > {via_current_capacity:.1f}mA on {via.layer}",
                         via.position, related_data={'current': estimated_current, 'capacity': via_current_capacity})
+
+    def _add_violation_from_plugin(self, rule: CheckRule, v: Dict):
+        """Convert a rules/ plugin violation dict into engine Violation."""
+        sev = v.get('severity', rule.severity)
+        if hasattr(sev, 'value'):
+            sev = sev.value
+        loc = v.get('location')
+        self._add_violation(
+            rule,
+            v.get('net_name') or '',
+            v.get('message', ''),
+            location=loc,
+            polygons=v.get('polygons'),
+            wire_segments=v.get('wire_segments'),
+            related_data=v.get('related_data'),
+        )
 
     def _add_violation(self, rule: CheckRule, net_name: str, message: str,
                        location: Point = None, polygons: List[Polygon] = None,
@@ -1394,11 +1322,11 @@ class ProfessionalLayoutReviewEngine:
             related_data=related_data or {}
         )
         self.violations.append(violation)
-    
+
     def _analyze_all_matching_pairs(self):
         """分析所有匹配对"""
         net_names = list(self.nets.keys())
-        
+
         # 位线对
         bl_nets = sorted([n for n in net_names if 'BL' in n.upper() and 'BLB' not in n.upper()])
         for bl in bl_nets:
@@ -1409,18 +1337,18 @@ class ProfessionalLayoutReviewEngine:
                 if bl.replace('BL', '').replace('bl', '') == blb.replace('BLB', '').replace('blb', ''):
                     self.analyze_matching(bl, blb)
                     break
-        
+
         # 字线
         wl_nets = sorted([n for n in net_names if re.search(r'WL\d+', n, re.I)])
         for i in range(len(wl_nets) - 1):
             self.analyze_matching(wl_nets[i], wl_nets[i+1])
-    
+
     def _run_em_analysis(self):
         """对所有电源net运行EM分析"""
         for net_name in self.nets:
             if any(kw in net_name.upper() for kw in ['VDD', 'VSS', 'PWR']):
                 self.analyze_em(net_name)
-    
+
     def _generate_summary(self) -> ReviewSummary:
         """生成Review汇总"""
         summary = ReviewSummary()
@@ -1429,46 +1357,46 @@ class ProfessionalLayoutReviewEngine:
         summary.critical_count = len([v for v in self.violations if v.severity == Severity.CRITICAL])
         summary.warning_count = len([v for v in self.violations if v.severity == Severity.WARNING])
         summary.info_count = len([v for v in self.violations if v.severity == Severity.INFO])
-        
+
         # RC统计
         resistances = [rc.total_resistance for rc in self.net_rc_data.values()]
         capacitances = [rc.total_capacitance for rc in self.net_rc_data.values()]
-        
+
         if resistances:
             summary.total_resistance_range = (min(resistances), max(resistances))
             summary.avg_resistance = sum(resistances) / len(resistances)
-        
+
         if capacitances:
             summary.total_capacitance_range = (min(capacitances), max(capacitances))
             summary.avg_capacitance = sum(capacitances) / len(capacitances)
-        
+
         # 匹配分析
         summary.matching_pairs_analyzed = len(self.matching_results)
         summary.poor_matching_count = len([m for m in self.matching_results if m.match_score < 70])
-        
+
         # 层使用统计
         for rc in self.net_rc_data.values():
             for layer, count in rc.layer_usage.items():
                 if layer not in summary.layer_usage:
                     summary.layer_usage[layer] = 0
                 summary.layer_usage[layer] += count
-        
+
         # 违规分类
         for v in self.violations:
             if v.type not in summary.violations_by_type:
                 summary.violations_by_type[v.type] = 0
             summary.violations_by_type[v.type] += 1
-            
+
             if v.net_name not in summary.violations_by_net:
                 summary.violations_by_net[v.net_name] = 0
             summary.violations_by_net[v.net_name] += 1
-            
+
             if v.rule_id not in summary.rules_triggered:
                 summary.rules_triggered[v.rule_id] = 0
             summary.rules_triggered[v.rule_id] += 1
-        
+
         return summary
-    
+
     def _print_summary(self, summary: ReviewSummary):
         """打印汇总"""
         print(f"\nTotal Nets: {summary.total_nets}")
@@ -1476,15 +1404,15 @@ class ProfessionalLayoutReviewEngine:
         print(f"  Critical: {summary.critical_count}")
         print(f"  Warning:  {summary.warning_count}")
         print(f"  Info:     {summary.info_count}")
-        print(f"\nRC Summary:")
+        print("\nRC Summary:")
         print(f"  Resistance range: {summary.total_resistance_range[0]:.1f} - {summary.total_resistance_range[1]:.1f} Ω")
         print(f"  Average R: {summary.avg_resistance:.1f} Ω")
         print(f"  Capacitance range: {summary.total_capacitance_range[0]:.1f} - {summary.total_capacitance_range[1]:.1f} fF")
         print(f"  Average C: {summary.avg_capacitance:.1f} fF")
-        print(f"\nMatching Analysis:")
+        print("\nMatching Analysis:")
         print(f"  Pairs analyzed: {summary.matching_pairs_analyzed}")
         print(f"  Poor matching: {summary.poor_matching_count}")
-    
+
     def get_net_info_table(self) -> List[Dict]:
         """获取Net信息表格数据"""
         table_data = []
@@ -1538,13 +1466,13 @@ def create_engine(config: LayoutReviewConfig = None) -> ProfessionalLayoutReview
 if __name__ == '__main__':
     print("Professional Layout Review Engine")
     print("=" * 60)
-    
+
     # 创建引擎
     engine = create_engine()
-    
+
     # 打印配置信息
     print(f"\nTech: {engine.tech.name} ({engine.tech.node})")
     print(f"Rules: {len(engine.config.check_rules)} configured")
     print(f"Enabled: {len(engine.config.get_enabled_rules())} enabled")
-    
+
     print("\n[OK] Engine initialized successfully!")
