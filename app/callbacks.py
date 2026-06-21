@@ -5,13 +5,54 @@ import os
 import re
 
 import plotly.graph_objects as go
-from dash import Dash, Input, Output, State, callback_context, html
+from dash import Dash, Input, Output, State, callback_context, html, no_update
 from dash.exceptions import PreventUpdate
 
 from app.state import app_state
 from core.data_parsing import import_shape_from_file, parse_shape_txt
+from core.net_identity import (
+    DEFAULT_SOURCE,
+    derive_source_from_relative_path,
+    make_net_id,
+)
 from core.path_analysis import get_view_for_visible_layers
 from core.visualization import create_net_visualization
+
+
+def _store_net_entry(record: dict):
+    """Store parsed net record. Returns (net_id, overwritten)."""
+    net_id = record["net_id"]
+    overwritten = net_id in app_state.nets_data
+    app_state.nets_data[net_id] = {
+        "source": record["source"],
+        "net_name": record["net_name"],
+        "filepath": record.get("filepath", ""),
+        "filename": record["filename"],
+        "shapes": record["shapes"],
+        "polygons": record["polygons"],
+    }
+    return net_id, overwritten
+
+
+def _record_from_uploaded_txt(decoded: str, filename: str, relative_path=None):
+    parsed = parse_shape_txt(decoded, os.path.basename(filename))
+    if not parsed:
+        return None
+    net_name, shapes_data, polygons = parsed
+    if relative_path and "/" in relative_path.replace("\\", "/"):
+        source = derive_source_from_relative_path(relative_path.replace("\\", "/"))
+    else:
+        source = DEFAULT_SOURCE
+    net_id = make_net_id(source, net_name)
+    return {
+        "net_id": net_id,
+        "source": source,
+        "net_name": net_name,
+        "filepath": "",
+        "filename": os.path.basename(filename),
+        "shapes": shapes_data,
+        "polygons": polygons,
+    }
 
 
 def _rebuild_engine_from_nets():
@@ -36,7 +77,8 @@ def _rebuild_engine_from_nets():
 
 def _nets_meta_payload():
     names = sorted(app_state.nets_data.keys(), key=natural_sort_key)
-    return {'count': len(names), 'names': names}
+    sources = sorted({d.get("source", "") for d in app_state.nets_data.values() if d.get("source")})
+    return {'count': len(names), 'names': names, 'sources': sources}
 
 
 def natural_sort_key(s):
@@ -89,20 +131,19 @@ def register_callbacks(app: Dash):
                 raise PreventUpdate
 
             imported = 0
+            overwritten = 0
             for content, filename in zip(contents, filenames):
                 try:
                     content_type, content_string = content.split(',')
                     decoded = base64.b64decode(content_string).decode('utf-8')
 
-                    result = parse_shape_txt(decoded, filename)
-                    if result:
-                        net_name, shapes_data, polygons = result
-                        app_state.nets_data[net_name] = {
-                            'shapes': shapes_data,
-                            'polygons': polygons,
-                            'filename': filename
-                        }
+                    rel = filename.replace("\\", "/") if filename else None
+                    record = _record_from_uploaded_txt(decoded, filename, relative_path=rel)
+                    if record:
+                        _, ow = _store_net_entry(record)
                         imported += 1
+                        if ow:
+                            overwritten += 1
                 except Exception as e:
                     print(f"Error importing {filename}: {e}")
 
@@ -110,6 +151,8 @@ def register_callbacks(app: Dash):
                 _rebuild_engine_from_nets()
 
             status = f"Imported {imported} files"
+            if overwritten:
+                status += f" ({overwritten} overwritten)"
             options = [{'label': name, 'value': name} for name in
                        sorted(app_state.nets_data.keys(), key=natural_sort_key)]
 
@@ -177,13 +220,10 @@ def register_callbacks(app: Dash):
                     if custom_net_name and auto_prefix:
                         custom_net_name = auto_prefix + custom_net_name
 
-                    result = import_shape_from_file(filepath, custom_net_name)
+                    yaml_source = shape_item.get('source') if isinstance(shape_item, dict) else None
+                    result = import_shape_from_file(filepath, custom_net_name, yaml_source=yaml_source)
                     if result:
-                        app_state.nets_data[result['net_name']] = {
-                            'shapes': result['shapes'],
-                            'polygons': result['polygons'],
-                            'filename': result['filename']
-                        }
+                        _store_net_entry(result)
                         imported += 1
                     else:
                         failed_files.append(os.path.basename(filepath))
@@ -420,24 +460,8 @@ def register_callbacks(app: Dash):
     # Properties Panel Callbacks
     # =========================================================================
 
-    @app.callback(
-        [Output('prop-net-name', 'children'),
-         Output('prop-layer-count', 'children'),
-         Output('prop-shape-count', 'children'),
-         Output('prop-resistance', 'children'),
-         Output('prop-capacitance', 'children'),
-         Output('prop-length', 'children'),
-         Output('prop-tau-rc', 'children'),
-         Output('prop-tpd', 'children'),
-         Output('prop-critical', 'children'),
-         Output('prop-warnings', 'children'),
-         Output('prop-info', 'children')],
-        [Input('net-selector', 'value')]
-    )
-    def update_properties_panel(selected_nets):
-        """Update properties panel with selected net info."""
-        # 返回11个值: net_name, layer_count, shape_count, resistance, capacitance,
-        #           length, tau_rc, tpd, critical, warnings, info
+    def _properties_panel_values(selected_nets):
+        """Build the 11 property-panel fields for the current net selection."""
         if not selected_nets or len(selected_nets) != 1:
             return ['--'] + ['0'] * 10
 
@@ -449,7 +473,6 @@ def register_callbacks(app: Dash):
         shapes = data['shapes']
         total_polys = sum(len(p) for p in shapes.values())
 
-        # Get RC data if engine exists
         resistance = '0 Ω'
         capacitance = '0 fF'
         length = '0 μm'
@@ -462,11 +485,9 @@ def register_callbacks(app: Dash):
                 resistance = f"{rc_data.total_resistance:.2f} Ω"
                 capacitance = f"{rc_data.total_capacitance:.2f} fF"
                 length = f"{rc_data.total_length:.2f} μm"
-                # tau/tpd 单位: ps (1 Ω·fF = 1 ps)
                 tau_rc = f"{rc_data.tau_rc:.2f} ps"
                 tpd = f"{rc_data.tpd_50:.2f} ps"
 
-        # Count violations
         critical = '0'
         warnings = '0'
         info = '0'
@@ -481,38 +502,42 @@ def register_callbacks(app: Dash):
                     else:
                         info = str(int(info) + 1)
 
-        return (net_name, str(len(shapes)), str(total_polys),
-                resistance, capacitance, length,
-                tau_rc, tpd,
-                critical, warnings, info)
+        return (
+            net_name, str(len(shapes)), str(total_polys),
+            resistance, capacitance, length,
+            tau_rc, tpd,
+            critical, warnings, info,
+        )
 
     @app.callback(
-        [Output('prop-critical', 'children'),
+        [Output('prop-net-name', 'children'),
+         Output('prop-layer-count', 'children'),
+         Output('prop-shape-count', 'children'),
+         Output('prop-resistance', 'children'),
+         Output('prop-capacitance', 'children'),
+         Output('prop-length', 'children'),
+         Output('prop-tau-rc', 'children'),
+         Output('prop-tpd', 'children'),
+         Output('prop-critical', 'children'),
          Output('prop-warnings', 'children'),
-         Output('prop-info', 'children'),
-         Output('output-log', 'children')],
-        Input('btn-run-review-panel', 'n_clicks'),
-        prevent_initial_call=True,
+         Output('prop-info', 'children')],
+        [Input('net-selector', 'value'),
+         Input('btn-run-review-panel', 'n_clicks')],
     )
-    def run_full_review_panel(n_clicks):
-        """Run legacy full review from the right panel."""
-        if not n_clicks or not app_state.engine:
-            raise PreventUpdate
-        try:
-            summary = app_state.engine.run_full_review()
+    def update_properties_panel(selected_nets, review_clicks):
+        """Refresh properties panel; Run Full Review re-runs checks and updates counts."""
+        ctx = callback_context
+        trigger_id = (
+            ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
+        )
+
+        if trigger_id == 'btn-run-review-panel':
+            if not review_clicks or not app_state.engine:
+                raise PreventUpdate
+            app_state.engine.run_full_review()
             app_state.review_completed = True
-            log = html.Div(
-                f"Full review complete: {summary.total_violations} violations "
-                f"across {summary.total_nets} nets."
-            )
-            return (
-                str(summary.critical_count),
-                str(summary.warning_count),
-                str(summary.info_count),
-                log,
-            )
-        except Exception as e:
-            return '0', '0', '0', html.Div(f"Review error: {e}", className='text-fail')
+
+        return _properties_panel_values(selected_nets)
 
     # =========================================================================
     # Export Callbacks

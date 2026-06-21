@@ -11,12 +11,12 @@ from review_engine import ProfessionalLayoutReviewEngine
 def test_run_full_review_sets_summary():
     result = import_shape_from_file("tests/shapes_test_normal.txt", custom_net_name="NORMAL")
     assert result is not None
-    net_name = result["net_name"]
+    net_id = result["net_id"]
     polygons = result["polygons"]
     config = get_sram_7nm_config()
     engine = ProfessionalLayoutReviewEngine(config)
-    engine.add_net_polygons(net_name, polygons)
-    engine.calculate_net_rc(net_name)
+    engine.add_net_polygons(net_id, polygons)
+    engine.calculate_net_rc(net_id)
     summary = engine.run_full_review()
     assert summary.total_nets >= 1
     assert summary.total_violations >= 0
