@@ -23,6 +23,10 @@ class RoutingState:
     # Custom overrides (None means use preset)
     custom_thresholds: Optional[RoutingThresholds] = None
 
+    # Explicit frozen mode (default True). When True, get_thresholds() uses
+    # the preset (custom_thresholds is forced to None). UI inputs are disabled.
+    is_frozen: bool = True
+
     # Golden + batch (regex strings; resolved against app_state.nets_data)
     golden_regex: str = ""
     batch_regex: str = ""
@@ -44,14 +48,37 @@ class RoutingState:
     review_completed: bool = False
     last_error: Optional[str] = None
 
+    def __post_init__(self):
+        """Enforce defaults: frozen mode starts with no custom overrides."""
+        if self.is_frozen:
+            self.custom_thresholds = None
+
     def get_thresholds(self) -> RoutingThresholds:
         return self.custom_thresholds or self.thresholds
+
+    def set_frozen_mode(self, frozen: bool):
+        """Set frozen mode. When enabling frozen, discard any custom overrides."""
+        self.is_frozen = frozen
+        if frozen:
+            self.custom_thresholds = None
+
+    def get_threshold_source(self) -> str:
+        """Human-readable source description for UI banners."""
+        if self.is_frozen:
+            return f"{self.current_preset}（冻结）"
+        return f"基于 {self.current_preset} 的自定义"
 
     def get_rc_model(self) -> RCModelConfig:
         """Return the active RC model (custom override or built-in default)."""
         return self.custom_rc_model or self.rc_model
 
     def reset_review(self):
+        """Clear only review execution results.
+
+        Threshold mode (is_frozen, custom_thresholds, current_preset, thresholds)
+        is intentionally preserved — reset_review is used before re-running
+        analysis, not to reset configuration.
+        """
         self.golden_net_name = ""
         self.golden_metrics = None
         self.batch_net_names = []
