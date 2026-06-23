@@ -5,8 +5,10 @@ sys.path.insert(0, '.')
 import pytest
 
 from config.routing_thresholds import RoutingThresholds
+from config_system import get_sram_7nm_config
+from core.effective_tau import ohm_ff_to_ps
 from core.routing_metrics import check_gates, compute_for_net, split_metal_via_polygons
-from review_engine import Point, Polygon
+from review_engine import Point, Polygon, ProfessionalLayoutReviewEngine
 
 
 def _rect(x1, y1, x2, y2, layer):
@@ -137,6 +139,46 @@ def test_soft_gates_enforced_without_golden():
     pass_, reasons = check_gates(metrics, thresholds, has_golden=False)
     assert pass_ is False
     assert any("h_ratio" in r for r in reasons)
+
+
+# --- Consistency test helper (Task 2) ---
+# Ensures the default rc_model=None path in compute_for_net yields the same
+# R/C/τ as the legacy engine path used by Layout View Properties panel.
+
+def _simple_long_m1():
+    """A simple long horizontal wire on met1 (no vias)."""
+    return [Polygon(
+        points=[Point(0, 0), Point(200, 0), Point(200, 0.05), Point(0, 0.05)],
+        layer="met1",
+    )]
+
+
+def test_compute_for_net_default_path_matches_legacy_rc():
+    """When rc_model is not passed (defaults to None), compute_for_net must
+    produce R/C/τ identical to legacy engine.calculate_net_rc + lumped tau.
+    This is the required default for Routing Review == Properties consistency.
+    """
+    cfg = get_sram_7nm_config()
+    tech = cfg.tech_config.layers
+    polys = _simple_long_m1()
+    net = "test_net"
+
+    # Legacy path (as used by Properties panel)
+    engine = ProfessionalLayoutReviewEngine(cfg)
+    engine.add_net_polygons(net, polys)
+    rc_legacy = engine.calculate_net_rc(net)
+
+    # Routing path with default (no rc_model arg → None inside)
+    m = compute_for_net(net, polys, [], tech, RoutingThresholds.for_preset("sram_7nm_wl"))
+
+    # R and C must match exactly (same calculate_net_rc)
+    assert m["r_total"] == pytest.approx(rc_legacy.total_resistance, rel=1e-12, abs=1e-12)
+    assert m["c_total"] == pytest.approx(rc_legacy.total_capacitance, rel=1e-12, abs=1e-12)
+
+    # Tau must match the lumped calculation used by legacy timing
+    expected_tau = ohm_ff_to_ps(rc_legacy.total_resistance, rc_legacy.total_capacitance, method="lumped")
+    assert m["effective_tau_ps"] == pytest.approx(expected_tau, rel=1e-9)
+    assert m["effective_tau_ps"] == pytest.approx(rc_legacy.tau_rc, rel=1e-9)
 
 
 def test_split_metal_via_polygons_separates_layers():

@@ -542,10 +542,10 @@ def _run_routing_review():
 
     tech_layers = app_state.config.tech_config.layers
     thresholds = routing_state.get_thresholds()
-    # RC Prediction Tab: pull the active RC model (custom override or
-    # built-in default).  When the user has applied a custom config, this
-    # propagates into every per-net R / C / τ computation below.
-    rc_model = routing_state.get_rc_model()
+    # Default RC path must match Layout View Properties:
+    # use legacy tech_layers + calculate_net_rc + lumped tau (rc_model=None).
+    # Only pass an RCModelConfig when the user has explicitly set a custom model.
+    rc_model_to_use = routing_state.custom_rc_model if routing_state.custom_rc_model else None
 
     # Compute golden first (if present)
     golden_metrics = None
@@ -556,7 +556,7 @@ def _run_routing_review():
         g_polys = g_data.get("polygons", [])
         g_metals, g_vias = split_metal_via_polygons(g_polys)
         m = compute_for_net(golden_name, g_metals, g_vias, tech_layers, thresholds,
-                            golden_metrics=None, rc_model=rc_model)
+                            golden_metrics=None, rc_model=rc_model_to_use)
         golden_metrics = {k: m[k] for k in ("h_ratio", "v_ratio", "total_len", "via_count",
                                             "r_total", "c_total", "effective_tau_ps", "bbox_aspect")}
         routing_state.golden_net_name = golden_name
@@ -576,7 +576,7 @@ def _run_routing_review():
         polys = data.get("polygons", [])
         metals, vias = split_metal_via_polygons(polys)
         m = compute_for_net(name, metals, vias, tech_layers, thresholds,
-                            golden_metrics=golden_metrics, rc_model=rc_model)
+                            golden_metrics=golden_metrics, rc_model=rc_model_to_use)
         m["violations"] = [vv.to_dict() for vv in _compute_violations_for_net(m, thresholds)]
         routing_state.batch_results[name] = m
 
