@@ -2,6 +2,13 @@
 
 Kept separate from `app/state.py` (the original global state) so the
 routing rewrite does not affect the existing tabs.
+
+USAGE CONTRACT (important for callers):
+- Do NOT mutate .custom_thresholds, .thresholds, or .is_frozen directly.
+- Always read the active thresholds via .get_thresholds() (it is authoritative).
+- Use .set_frozen_mode() (and related setters if any) to change mode.
+- Direct assignment can bypass frozen invariant and cause preset/custom
+  mismatch. Prefer get_thresholds() + set_frozen_mode() over raw access.
 """
 from __future__ import annotations
 
@@ -14,7 +21,11 @@ from config.routing_thresholds import RoutingThresholds
 
 @dataclass
 class RoutingState:
-    """State for the Configuration + Layout Review tabs (routing-focused)."""
+    """State for the Configuration + Layout Review tabs (routing-focused).
+
+    See module docstring for the usage contract: use get_thresholds()
+    and set_frozen_mode() rather than direct field mutation.
+    """
     # Current preset
     current_preset: str = "sram_7nm_wl"
     thresholds: RoutingThresholds = field(
@@ -23,8 +34,9 @@ class RoutingState:
     # Custom overrides (None means use preset)
     custom_thresholds: Optional[RoutingThresholds] = None
 
-    # Explicit frozen mode (default True). When True, get_thresholds() uses
-    # the preset (custom_thresholds is forced to None). UI inputs are disabled.
+    # Explicit frozen mode (default True).
+    # When True, get_thresholds() returns the preset value (ignores custom).
+    # UI inputs are disabled. Enforcement is now authoritative in get_thresholds().
     is_frozen: bool = True
 
     # Golden + batch (regex strings; resolved against app_state.nets_data)
@@ -49,15 +61,29 @@ class RoutingState:
     last_error: Optional[str] = None
 
     def __post_init__(self):
-        """Enforce defaults: frozen mode starts with no custom overrides."""
+        """Enforce defaults: frozen mode starts with no custom overrides.
+
+        Note: get_thresholds() is now the authoritative reader and also
+        respects is_frozen regardless of custom_thresholds state.
+        """
         if self.is_frozen:
             self.custom_thresholds = None
 
     def get_thresholds(self) -> RoutingThresholds:
+        """Return active thresholds.
+
+        Authoritative: when is_frozen, always return the preset (custom is ignored).
+        Callers should use this instead of accessing .custom_thresholds or .thresholds.
+        """
+        if self.is_frozen:
+            return self.thresholds
         return self.custom_thresholds or self.thresholds
 
     def set_frozen_mode(self, frozen: bool):
-        """Set frozen mode. When enabling frozen, discard any custom overrides."""
+        """Set frozen mode. When enabling frozen, discard any custom overrides.
+
+        Recommended over direct assignment to is_frozen / custom_thresholds.
+        """
         self.is_frozen = frozen
         if frozen:
             self.custom_thresholds = None
