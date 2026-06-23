@@ -32,6 +32,7 @@ METRIC_CARD_IDS = [
     ("h_ratio", "H / V Ratio", "%"),
     ("missing_via", "Missing Via", ""),
     ("r_total", "Eff. R (Ω)", "Ω"),
+    ("c_total", "Eff. C (fF)", "fF"),
     ("tau_ps", "Eff. τ (ps)", "ps"),
     ("similarity", "Similarity", "/100"),
     ("gate", "Pass / Fail", ""),
@@ -39,13 +40,25 @@ METRIC_CARD_IDS = [
 
 
 def _make_card(label: str, value: str, sub: str = "",
-               extra_class: str = "metric-card") -> html.Div:
-    """Build a single metric card div with label / value / optional sub-line."""
+               extra_class: str = "metric-card", threshold: str = "") -> html.Div:
+    """Build a single metric card div with label / value / optional sub-line.
+    If threshold provided, appends " / <threshold>" (gray) inline with value
+    so cards display both observed range and active threshold.
+    """
+    if threshold:
+        value_children = [
+            html.Span(value, style={"fontSize": "20px", "fontWeight": "600"}),
+            html.Span(f" / {threshold}", style={"fontSize": "12px", "color": "#94a3b8", "marginLeft": "4px"}),
+        ]
+        value_div = html.Div(value_children, className="metric-value",
+                             style={"fontSize": "20px", "fontWeight": "600"})
+    else:
+        value_div = html.Div(value, className="metric-value",
+                             style={"fontSize": "20px", "fontWeight": "600"})
     children = [
         html.Div(label, className="metric-label",
                  style={"fontSize": "11px", "color": "#888"}),
-        html.Div(value, className="metric-value",
-                 style={"fontSize": "20px", "fontWeight": "600"}),
+        value_div,
     ]
     if sub:
         children.append(html.Div(sub, className="metric-sub",
@@ -56,6 +69,20 @@ def _make_card(label: str, value: str, sub: str = "",
         "border": "1px solid var(--border-color)", "borderRadius": "6px",
         "minWidth": "120px",
     })
+
+
+def _build_threshold_source() -> html.Div:
+    """Build the prominent banner showing active threshold source (preset + frozen/custom state)."""
+    src = routing_state.get_threshold_source()
+    return html.Div([
+        html.Span("当前阈值来源: ", style={"fontSize": "11px", "fontWeight": "600"}),
+        html.Span(src, style={
+            "background": "rgba(5, 46, 22, 0.8)",
+            "padding": "2px 6px",
+            "borderRadius": "3px",
+            "fontSize": "10px",
+        }),
+    ], style={"marginBottom": "8px"})
 
 
 def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
@@ -92,14 +119,17 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
             h_lo, h_hi = _minmax(lambda r: r["h_ratio"])
             miss_lo, miss_hi = _minmax(lambda r: r["missing_via_count"])
             r_lo, r_hi = _minmax(lambda r: r["r_total"])
+            c_lo, c_hi = _minmax(lambda r: r["c_total"])
             tau_lo, tau_hi = _minmax(lambda r: r["effective_tau_ps"])
             sim_lo, sim_hi = _minmax(lambda r: r["similarity_score"])
+            thresholds = routing_state.get_thresholds()
             cards = [
                 _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%"),
                 _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max"),
-                _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max"),
-                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps",         "min–max"),
-                _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100",       "min–max"),
+                _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max", threshold=f"{thresholds.max_r_ohm:.1f}Ω"),
+                _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF",             "min–max", threshold=f"{thresholds.max_c_ff:.1f}fF"),
+                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps",         "min–max", threshold=f"{thresholds.max_tau_ps:.1f}ps"),
+                _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100",       "min–max", threshold=f"{thresholds.min_similarity:.0f}"),
             ]
 
     # Pass / Fail card — always show count
@@ -133,7 +163,7 @@ def _build_similarity_table() -> dash_table.DataTable:
     return dash_table.DataTable(
         data=rows,
         columns=[{"name": k, "id": k} for k in
-                 ("Net", "Dominant", "H %", "V %", "R (Ω)", "τ (ps)",
+                 ("Net", "Dominant", "H %", "V %", "R (Ω)", "C (fF)", "τ (ps)",
                   "Via Cov", "Miss Via", "Sim", "Pass")],
         sort_action="native", filter_action="native",
         row_selectable="single", page_size=10,
@@ -154,7 +184,12 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
     Nets with `status="no_data"` are rendered as a distinct "⚠" row with
     dashes for all numeric fields — these nets had no polygons to analyze,
     so any zero values would be misleading.
+
+    The C (fF) column (and cards) use routing_state.get_thresholds() so
+    table always reflects latest Config tab settings (re-run to refresh
+    after changing thresholds).
     """
+    thresholds = routing_state.get_thresholds()
     rows: List[Dict[str, Any]] = []
     for name, m in batch_results.items():
         if m.get("status") == "no_data":
@@ -164,6 +199,7 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
                 "H %": "—",
                 "V %": "—",
                 "R (Ω)": "—",
+                "C (fF)": "—",
                 "τ (ps)": "—",
                 "Via Cov": "—",
                 "Miss Via": "—",
@@ -177,6 +213,7 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
                 "H %": f"{m['h_ratio']*100:.1f}",
                 "V %": f"{m['v_ratio']*100:.1f}",
                 "R (Ω)": f"{m['r_total']:.2f}",
+                "C (fF)": f"{m['c_total']:.1f} / {thresholds.max_c_ff:.1f}",
                 "τ (ps)": f"{m['effective_tau_ps']:.2f}",
                 "Via Cov": f"{m['via_coverage']*100:.1f}",
                 "Miss Via": m["missing_via_count"],
@@ -246,6 +283,11 @@ def create_routing_review_tab():
                 ),
             ],
         ),
+
+        # Threshold source banner — shows active source from routing_state
+        # (e.g. "当前阈值来源: sram_7nm_wl（冻结）" or "基于 ... 的自定义")
+        # Updated by dedicated callback on tab/interval; initial value from state.
+        html.Div(id="routing-threshold-source", children=_build_threshold_source()),
 
         # Summary cards — wrapped so the callback can update them on review
         html.Div(id="routing-metric-cards",
@@ -378,6 +420,18 @@ def register_routing_review_callbacks(app):
         if tab not in (None, "tab-routing-review"):
             return no_update
         return _empty_state_banner()
+
+    # --- 0b. Threshold source banner — keeps "当前阈值来源: xxx" in sync
+    #         with Routing Config (preset + frozen/custom via get_threshold_source).
+    @app.callback(
+        Output("routing-threshold-source", "children"),
+        [Input("tabs", "value"),
+         Input("interval-component", "n_intervals")],
+    )
+    def _refresh_threshold_source(tab, _n):
+        if tab not in (None, "tab-routing-review"):
+            return no_update
+        return _build_threshold_source()
 
     # --- 0a. Error banner — driven by routing_state.last_error. ---
     @app.callback(
