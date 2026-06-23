@@ -232,21 +232,17 @@ def compute_net_metrics_with_tau(
     If `rc_model` is provided (an `RCModelConfig` instance), the per-segment
     R and C are recomputed using the user's process / EDA parameters, which
     override the `tech_layers` lookup.  This is the entry point the RC
-    Prediction Tab hooks into.  When `rc_model` is None, the old
-    `tech_layers` path is used (backward compat).
+    Prediction Tab hooks into.  When `rc_model` is None (default path), use
+    calculate_net_rc totals + ohm_ff_to_ps for τ (ensures R/C/τ identical
+    to legacy Properties / review_engine path, including multi-layer nets).
     """
-    from core.effective_tau import compute_effective_tau, ohm_ff_to_ps
+    from core.effective_tau import ohm_ff_to_ps
 
     rc_data = calculate_net_rc(net_name, polygons, vias, tech_layers)
 
-    if rc_data.layer_resistances:
-        dominant_layer = max(rc_data.layer_resistances, key=rc_data.layer_resistances.get)
-    else:
-        dominant_layer = "met1"
-
-    layer_info = tech_layers.get(dominant_layer, {}) if tech_layers else {}
-    r_per_sq = layer_info.get("resistance_per_sq", 0.15)
-    c_per_um = layer_info.get("capacitance_per_um", 0.20)
+    # Note: dominant-layer logic removed (was only needed for the old default-path
+    # compute_effective_tau using uniform params). Default τ now uses summed
+    # per-layer totals (correct for multi-layer) + ohm_ff_to_ps.
 
     rc_model_applied = False
     if rc_model is not None:
@@ -283,9 +279,11 @@ def compute_net_metrics_with_tau(
             n_segments=n_segments_eff,
         )
     else:
-        tau_ps = compute_effective_tau(
-            rc_data.wire_segments, r_per_sq, c_per_um,
-            method=tau_method_eff, n_segments=n_segments_eff,
+        # Default path: use totals from per-layer calculate_net_rc (matches legacy
+        # Properties / review_engine path for R/C/τ on multi-layer nets too).
+        tau_ps = ohm_ff_to_ps(
+            rc_data.total_resistance, rc_data.total_capacitance,
+            method=tau_method_eff, n_segments=n_segments_eff
         )
 
     return {

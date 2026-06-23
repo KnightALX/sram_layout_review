@@ -206,9 +206,8 @@ def compute_for_net(
         rc_model: Optional RCModelConfig.  When provided (and non-None),
             R/C/tau are computed using the user's process / EDA parameters
             (from the RC Prediction Tab / custom model).  When None (the
-            default), the legacy `tech_layers` + calculate_net_rc + lumped
-            path is used — this produces values consistent with the
-            Layout View Properties panel.
+            default), the legacy `tech_layers` + calculate_net_rc + totals-based
+            lumped τ is used — produces R/C/τ identical to Layout View Properties.
 
     Returns:
         Dict matching the 6-metric contract (with both `total_length` and
@@ -231,8 +230,9 @@ def compute_for_net(
     # 2. Via coverage (analyze_via_coverage accepts polygons)
     vc = analyze_via_coverage(polygons, vias, min_via_per_overlap=1)
     # 3-4. RC + tau:
-    # - Default (rc_model=None): use legacy tech_layers + calculate_net_rc + lumped
-    #   (identical R/C/τ to Layout View Properties panel / review_engine path).
+    # - Default (rc_model=None): use legacy tech_layers + calculate_net_rc + ohm_ff_to_ps
+    #   (R/C/τ now identical to Layout View Properties panel / review_engine path
+    #    for mono- and multi-layer nets).
     # - Only when an explicit RCModelConfig is passed: use custom model for R/C/τ.
     rc = compute_net_metrics_with_tau(
         net_name, polygons, vias_for_rc, tech_layers,
