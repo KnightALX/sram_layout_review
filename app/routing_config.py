@@ -156,6 +156,22 @@ def create_routing_config_tab():
                     clearable=False,
                     className="dropdown",
                 ),
+                # Explicit 冻结/可编辑 toggle (Task 4)
+                html.Div([
+                    html.Button(
+                        "冻结",
+                        id="mode-frozen",
+                        className=("btn btn-primary btn-sm"
+                                   if routing_state.is_frozen else "btn btn-secondary btn-sm"),
+                        style={"marginRight": "4px"},
+                    ),
+                    html.Button(
+                        "可编辑",
+                        id="mode-editable",
+                        className=("btn btn-secondary btn-sm"
+                                   if routing_state.is_frozen else "btn btn-primary btn-sm"),
+                    ),
+                ], style={"display": "flex", "gap": "4px", "marginTop": "8px"}),
                 html.Div(id="routing-preset-status",
                          className="text-muted", style={"fontSize": "11px", "marginTop": "6px"}),
             ], className="card-body"),
@@ -179,6 +195,7 @@ def create_routing_config_tab():
                             type="number",
                             value=getattr(thr, name),
                             min=mn, max=mx, step=st,
+                            disabled=routing_state.is_frozen,
                             className="input-field",
                         ),
                     ], className="form-group")
@@ -354,14 +371,21 @@ def register_routing_config_callbacks(app):
 
     # --- 4. Preset switch → reload thresholds immediately (presets should
     #         apply instantly — only manual threshold edits require Apply).
+    #         Respects is_frozen: frozen loads immediately; editable uses simple
+    #         status + prevent (revert dropdown) to avoid losing unsaved edits.
+    #         Also hooks thresh-* inputs + outputs disabled for mode support.
     #         Also hooks thresh-* inputs to prevent the preview refresh from
     #         killing thresh values. ---
     @app.callback(
-        [Output("routing-preset-status", "children", allow_duplicate=True),
+        [Output("mode-frozen", "className", allow_duplicate=True),
+         Output("mode-editable", "className", allow_duplicate=True),
+         Output("routing-preset-status", "children", allow_duplicate=True),
          Output("routing-config-status", "children", allow_duplicate=True),
          Output("thresh-unsaved-badge", "children", allow_duplicate=True),
-         Output("thresh-apply-status", "children", allow_duplicate=True)]
-        + [Output(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
+         Output("thresh-apply-status", "children", allow_duplicate=True),
+         Output("routing-preset", "value", allow_duplicate=True)]
+        + [Output(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS]
+        + [Output(f"thresh-{name}", "disabled") for name, *_ in THRESHOLD_FIELDS],
         [Input("routing-preset", "value")]
         + [Input(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
         prevent_initial_call=True,
@@ -370,8 +394,34 @@ def register_routing_config_callbacks(app):
         ctx = dash_ctx
         trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
 
-        # Preset switch → reload thresholds into state AND inputs immediately.
+        n_fields = len(THRESHOLD_FIELDS)
+        frozen = routing_state.is_frozen
+        dis_list = [frozen] * n_fields
+        f_cls = "btn btn-primary btn-sm" if frozen else "btn btn-secondary btn-sm"
+        e_cls = "btn btn-secondary btn-sm" if frozen else "btn btn-primary btn-sm"
+
+        # Preset switch → respect frozen vs editable (Task 4 step 4 + 6)
         if trigger == "routing-preset" and preset:
+            if not frozen:
+                # Editable: prevent switch to protect unsaved changes (simple status+prevent, no ConfirmDialog)
+                curr_p = routing_state.current_preset
+                curr_thr = routing_state.get_thresholds()
+                curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
+                warn = "编辑模式：切换 Preset 已阻止（有未保存修改）。请先点击 Apply 或切换到“冻结”。"
+                dis_ed = [False] * n_fields
+                f_ed = "btn btn-secondary btn-sm"
+                e_ed = "btn btn-primary btn-sm"
+                return [
+                    f_ed, e_ed,
+                    f"Loaded: {curr_p}",
+                    warn,
+                    html.Span("● unsaved changes", style={
+                        "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+                    "",
+                    curr_p,  # revert dropdown visually
+                ] + curr_vals + dis_ed
+
+            # Frozen path: load immediately, clear custom, force frozen
             try:
                 from config.routing_thresholds import _BUILTIN_PRESETS
                 if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
@@ -381,14 +431,20 @@ def register_routing_config_callbacks(app):
                 routing_state.current_preset = preset
                 routing_state.thresholds = t
                 routing_state.custom_thresholds = None
+                routing_state.set_frozen_mode(True)
                 status = f"Loaded preset: {preset}"
                 thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
-                return [status, "", html.Span("", style={"display": "none"}), ""] + thresh_outputs
+                dis_f = [True] * n_fields
+                f_f = "btn btn-primary btn-sm"
+                e_f = "btn btn-secondary btn-sm"
+                return [f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset] + thresh_outputs + dis_f
             except Exception as e:
-                return [f"Error: {e}", "", html.Span("", style={"display": "none"}), ""] + list(thresh_values)
+                curr_vals = list(thresh_values) if thresh_values else [getattr(routing_state.get_thresholds(), name) for name, *_ in THRESHOLD_FIELDS]
+                return [f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset] + curr_vals + dis_list
 
         # Manual threshold edit → validate UI only, do NOT commit to state.
         # Show "unsaved changes" badge so the user knows to click Apply.
+        # Only meaningful in editable (frozen inputs are disabled so shouldn't reach here).
         current = routing_state.get_thresholds()
         tentative_dict = current.to_dict()
         for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
@@ -398,30 +454,39 @@ def register_routing_config_callbacks(app):
             tentative = RoutingThresholds.from_dict(tentative_dict)
             tentative.validate()
             # Validation passed — show unsaved badge, keep inputs as-is
+            # Note: manual edit path implies editable (dis=False), buttons reflect current frozen (from state)
             return [
+                f_cls, e_cls,
                 f"Loaded: {routing_state.current_preset}",
                 "",
                 html.Span("● unsaved changes", style={
                     "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
                 html.Span("Thresholds modified — click Apply to save.",
                           style={"fontSize": "10px", "color": "#E67E22"}),
-            ] + list(thresh_values)
+                no_update,  # do not touch preset dropdown
+            ] + list(thresh_values) + [False] * n_fields
         except Exception as e:
             # Invalid values — snap back to last-known-good, show error
             safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
             return [
+                f_cls, e_cls,
                 f"Loaded: {routing_state.current_preset}",
                 f"Invalid: {e} (reverted)",
                 html.Span("", style={"display": "none"}),
                 html.Span(f"Invalid: {e}", style={"fontSize": "10px", "color": "#C0392B"}),
-            ] + safe_values
+                no_update,
+            ] + safe_values + dis_list
 
     # --- 5. Apply Thresholds button — validates and commits to routing_state ---
+    # Enhances to set is_frozen=False (editable) on commit (Task 4 step 5).
     @app.callback(
-        [Output("thresh-apply-status", "children", allow_duplicate=True),
+        [Output("mode-frozen", "className", allow_duplicate=True),
+         Output("mode-editable", "className", allow_duplicate=True),
+         Output("thresh-apply-status", "children", allow_duplicate=True),
          Output("thresh-unsaved-badge", "children", allow_duplicate=True),
          Output("routing-config-status", "children", allow_duplicate=True)]
-        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
+        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
+        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
         Input("btn-apply-thresholds", "n_clicks"),
         [State(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
         prevent_initial_call=True,
@@ -437,14 +502,18 @@ def register_routing_config_callbacks(app):
             tentative.validate()
         except Exception as e:
             safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
+            dis = [routing_state.is_frozen] * len(THRESHOLD_FIELDS)
+            f_cls = "btn btn-primary btn-sm" if routing_state.is_frozen else "btn btn-secondary btn-sm"
+            e_cls = "btn btn-secondary btn-sm" if routing_state.is_frozen else "btn btn-primary btn-sm"
             return (
-                [html.Span(f"✗ Apply failed: {e}", style={"fontSize": "11px", "color": "#C0392B"}),
+                [f_cls, e_cls,
+                 html.Span(f"✗ Apply failed: {e}", style={"fontSize": "11px", "color": "#C0392B"}),
                  html.Span("● unsaved changes", style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
                  f"Apply failed: {e}"]
-                + safe_values
+                + safe_values + dis
             )
 
-        # Commit to routing_state
+        # Commit to routing_state + switch to editable mode (custom active)
         if routing_state.custom_thresholds is None:
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.thresholds.to_dict()
@@ -453,10 +522,80 @@ def register_routing_config_callbacks(app):
             if val is not None:
                 setattr(routing_state.custom_thresholds, name, val)
 
+        # Per spec: Apply commits and sets appropriate mode (editable)
+        routing_state.set_frozen_mode(False)
+
+        f_cls = "btn btn-secondary btn-sm"
+        e_cls = "btn btn-primary btn-sm"
+        dis_editable = [False] * len(THRESHOLD_FIELDS)
         return (
-            [html.Span("✓ Thresholds applied successfully.",
+            [f_cls, e_cls,
+             html.Span("✓ Thresholds applied successfully.",
                        style={"fontSize": "11px", "color": "#27AE60", "fontWeight": "600"}),
              html.Span("", style={"display": "none"}),
              f"Thresholds applied (preset: {routing_state.current_preset})"]
-            + list(thresh_values)
+            + list(thresh_values) + dis_editable
         )
+
+    # --- Mode switch callbacks (Task 4 step 3) ---
+    # New callbacks for mode buttons that set routing_state.is_frozen (via set_frozen_mode)
+    # and reload values. When switching to editable from frozen, always copy current to custom.
+    mode_button_outputs = (
+        [Output("mode-frozen", "className", allow_duplicate=True),
+         Output("mode-editable", "className", allow_duplicate=True),
+         Output("routing-preset-status", "children", allow_duplicate=True),
+         Output("routing-config-status", "children", allow_duplicate=True),
+         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
+         Output("thresh-apply-status", "children", allow_duplicate=True)]
+        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
+        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
+    )
+
+    @app.callback(
+        mode_button_outputs,
+        [Input("mode-frozen", "n_clicks"),
+         Input("mode-editable", "n_clicks")],
+        prevent_initial_call=True,
+    )
+    def _switch_mode(f_nclicks, e_nclicks):
+        ctx = dash_ctx
+        trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
+        n_fields = len(THRESHOLD_FIELDS)
+
+        if trigger == "mode-frozen":
+            routing_state.set_frozen_mode(True)
+            thr = routing_state.get_thresholds()
+            vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
+            f_cls = "btn btn-primary btn-sm"
+            e_cls = "btn btn-secondary btn-sm"
+            dis_list = [True] * n_fields
+            return [
+                f_cls, e_cls,
+                f"Mode: 冻结（{routing_state.current_preset}）",
+                "",
+                html.Span("", style={"display": "none"}),
+                "",
+            ] + vals + dis_list
+
+        if trigger == "mode-editable":
+            # Always copy current (from preset) to custom if needed (per spec + requirement)
+            if routing_state.custom_thresholds is None:
+                routing_state.custom_thresholds = RoutingThresholds.from_dict(
+                    routing_state.thresholds.to_dict()
+                )
+            routing_state.set_frozen_mode(False)
+            thr = routing_state.get_thresholds()
+            vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
+            f_cls = "btn btn-secondary btn-sm"
+            e_cls = "btn btn-primary btn-sm"
+            dis_list = [False] * n_fields
+            return [
+                f_cls, e_cls,
+                "Mode: 可编辑（基于 preset，修改后需 Apply）",
+                "",
+                html.Span("", style={"display": "none"}),
+                "",
+            ] + vals + dis_list
+
+        # Should not reach
+        raise dash_ctx.PreventUpdate
