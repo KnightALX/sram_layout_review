@@ -55,7 +55,7 @@ def _handle_routing_preset_or_thresh(
             curr_p = routing_state.current_preset
             curr_thr = routing_state.get_thresholds()
             curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
-            warn = "编辑模式：切换 Preset 已阻止（有未保存修改）。请先点击 Apply 或切换到“冻结”。"
+            warn = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
             dis_ed = _disabled_list(False, n_fields)
             f_ed, e_ed = _mode_button_classes(False)
             return tuple([
@@ -329,16 +329,16 @@ def create_routing_config_tab():
                     clearable=False,
                     className="dropdown",
                 ),
-                # Explicit 冻结/可编辑 toggle (Task 4)
+                # Explicit Locked/Editable toggle (Task 4)
                 html.Div([
                     html.Button(
-                        "冻结",
+                        "Locked",
                         id="mode-frozen",
                         className=f_cls,
                         style={"marginRight": "4px"},
                     ),
                     html.Button(
-                        "可编辑",
+                        "Editable",
                         id="mode-editable",
                         className=e_cls,
                     ),
@@ -489,7 +489,7 @@ def register_routing_config_callbacks(app):
     #         re-populate all threshold inputs from the *authoritative* state
     #         (routing_state.get_thresholds()), set correct disabled flags per
     #         current is_frozen, and restore the mode button classes.
-    #         This fixes "tab switch loses values" / "apply无效" symptoms.
+    #         This fixes "tab switch loses values" / "apply invalid" symptoms.
     @app.callback(
         [Output("mode-frozen", "className", allow_duplicate=True),
          Output("mode-editable", "className", allow_duplicate=True),
@@ -708,7 +708,7 @@ def register_routing_config_callbacks(app):
             dis_list = _disabled_list(routing_state.is_frozen, n_fields)
             return [
                 f_cls, e_cls,
-                f"Mode: 冻结（{routing_state.current_preset}）",
+                f"Mode: Locked ({routing_state.current_preset})",
                 "",
                 html.Span("", style={"display": "none"}),
                 "",
@@ -728,7 +728,7 @@ def register_routing_config_callbacks(app):
             dis_list = _disabled_list(routing_state.is_frozen, n_fields)
             return [
                 f_cls, e_cls,
-                "Mode: 可编辑（基于 preset，修改后需 Apply）",
+                "Mode: Editable (based on preset, Apply required after edits)",
                 "",
                 html.Span("", style={"display": "none"}),
                 "",

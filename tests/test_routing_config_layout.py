@@ -160,7 +160,7 @@ def test_handle_logic_editable_preset_prevent(monkeypatch):
     assert out[6] == curr
     # status child (index 3) contains the Chinese prevent message
     status_txt = str(out[3])
-    assert "编辑模式" in status_txt and "阻止" in status_txt
+    assert "Edit Mode" in status_txt and "Blocked" in status_txt
 
     # Now simulate the revert fire (preset now equals current) -> should raise Prevent
     try:
