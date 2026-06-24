@@ -96,9 +96,8 @@ def _handle_routing_preset_or_thresh(
     # Task 5 Step 3: guard red/invalid + unsaved logic with "user_modified" check
     # against last-known-good (the authoritative current values from state).
     # This prevents showing red font or "unsaved" on initial load / re-sync
-    # of a perfectly valid preset. Only treat as a modifying user action (and
-    # run tentative validation that can produce red) when an input value
-    # actually differs from the last good value.
+    # of a perfectly valid preset. Only treat as a modifying user action when an
+    # input value actually differs from the last good value.
     user_modified = False
     for i, (name, *_) in enumerate(THRESHOLD_FIELDS):
         v = thresh_values[i] if i < len(thresh_values) else None
@@ -124,42 +123,32 @@ def _handle_routing_preset_or_thresh(
             _no_update,
         ] + current_vals + dis_list)
 
-    # Real user modification: build tentative from provided values and validate.
-    # Red/invalid styling will now only be shown when the user's change caused failure.
-    tentative_dict = current.to_dict()
-    for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
-        if val is not None:
-            tentative_dict[name] = val
-    try:
-        tentative = RoutingThresholds.from_dict(tentative_dict)
-        tentative.validate()
-        dis_editable = _disabled_list(False, n_fields)
-        from dash import no_update as _no_update
-        return tuple([
-            f_cls, e_cls,
-            f"Loaded: {routing_state.current_preset}",
-            "",
-            html.Span("● unsaved changes", style={
-                "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-            html.Span("Thresholds modified — click Apply to save.",
-                      style={"fontSize": "10px", "color": "#E67E22"}),
-            _no_update,
-        ] + list(thresh_values) + dis_editable)
-    except Exception as e:
-        safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
-        from dash import no_update as _no_update
-        return tuple([
-            f_cls, e_cls,
-            f"Loaded: {routing_state.current_preset}",
-            f"Invalid: {e} (reverted)",
-            html.Span("", style={"display": "none"}),
-            html.Span(f"Invalid: {e}", style={"fontSize": "10px", "color": "#C0392B"}),
-            _no_update,
-        ] + safe_values + dis_list)
+    # Real user modification (Task 6): show unsaved cues ONLY.
+    # Do NOT perform from_dict + validate() + red revert on every keystroke.
+    # Intermediate states during typing (None, '1.', partials) must never cause
+    # revert of the input. Browser-native invalid (red) from min/max is also
+    # eliminated by using 0.0/1.0 in THRESHOLD_FIELDS.
+    # Full validation + possible revert happens exclusively in the Apply button
+    # handler (or when truly out-of-range after user commits via Apply).
+    dis_editable = _disabled_list(False, n_fields)
+    from dash import no_update as _no_update
+    # Return no_update for the 7 thresh value outputs so the live <input type=number>
+    # state in the browser is not overwritten or reverted on each keystroke.
+    thresh_value_slots = [_no_update] * n_fields
+    return tuple([
+        f_cls, e_cls,
+        f"Loaded: {routing_state.current_preset}",
+        "",
+        html.Span("● unsaved changes", style={
+            "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+        html.Span("Thresholds modified — click Apply to save.",
+                  style={"fontSize": "10px", "color": "#E67E22"}),
+        _no_update,
+    ] + thresh_value_slots + dis_editable)
 
 THRESHOLD_FIELDS = [
-    ("max_h_ratio", "Max H Ratio (WL gate)", "0.01", "0.99", "0.01"),
-    ("max_v_ratio", "Max V Ratio (IO gate)", "0.01", "0.99", "0.01"),
+    ("max_h_ratio", "Max H Ratio (WL gate)", "0.0", "1.0", "0.01"),
+    ("max_v_ratio", "Max V Ratio (IO gate)", "0.0", "1.0", "0.01"),
     ("max_r_ohm", "Max Total R (Ω)", "0.1", "10000", "0.1"),
     ("max_c_ff", "Max Total C (fF)", "0.1", "100000", "1"),
     ("max_tau_ps", "Max Effective τ (ps)", "0.01", "1000", "0.1"),

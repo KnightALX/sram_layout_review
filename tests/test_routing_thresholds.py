@@ -1,7 +1,8 @@
 """Tests for routing threshold dataclass."""
 import pytest
 
-from config.routing_thresholds import RoutingThresholds
+from config.preset_loader import list_yaml_presets, load_preset_yaml
+from config.routing_thresholds import _BUILTIN_PRESETS, RoutingThresholds
 
 
 def test_default_thresholds_for_wl_net():
@@ -43,3 +44,25 @@ def test_validate_rejects_inverted_ratios():
     )
     with pytest.raises(ValueError, match="sum of max ratios"):
         t.validate()
+
+
+def test_all_builtin_and_yaml_presets_pass_validate():
+    """All _BUILTIN_PRESETS (via for_preset which now validates on load) and
+    YAML presets must pass .validate(). This guards against 'default values red'
+    caused by templates that fail range or h+v>=1 rules.
+    """
+    # Built-ins are validated inside for_preset (Task 6)
+    for name in _BUILTIN_PRESETS:
+        t = RoutingThresholds.for_preset(name)
+        # Explicit re-validate to be sure (idempotent)
+        t.validate()
+
+    # YAMLs are validated at load time; double-check round trip values
+    for name in list_yaml_presets():
+        t = load_preset_yaml(name)
+        t.validate()
+        # Cross-check against builtin equivalent when present
+        if name in _BUILTIN_PRESETS:
+            t2 = RoutingThresholds.for_preset(name)
+            assert abs(t.max_h_ratio - t2.max_h_ratio) < 1e-12
+            assert abs(t.max_v_ratio - t2.max_v_ratio) < 1e-12

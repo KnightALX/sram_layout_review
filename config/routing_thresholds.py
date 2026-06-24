@@ -78,7 +78,9 @@ class RoutingThresholds:
         """Get default thresholds by preset name."""
         if preset_name not in _BUILTIN_PRESETS:
             raise KeyError(f"Unknown preset: {preset_name}")
-        return cls.from_dict(_BUILTIN_PRESETS[preset_name])
+        t = cls.from_dict(_BUILTIN_PRESETS[preset_name])
+        t.validate()
+        return t
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "RoutingThresholds":
