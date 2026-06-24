@@ -202,7 +202,7 @@ YAML 字段对齐（仅做 sanity 改写，不改语义值）：
 | 阈值 | Threshold |
 | 预设 | Preset |
 | 通过/失败 | Pass / Fail |
-| 严重 | Severity |
+| 严重 | Critical |
 | 加载中 | Loading… |
 | 错误 | Error |
 | 成功 | Success |
@@ -260,7 +260,7 @@ YAML 字段对齐（仅做 sanity 改写，不改语义值）：
 | Apply 时输入非法 | UI 红字 "Validation Failed: <field>" | 不变 |
 | Apply 时输入合法 | UI 绿字 "Applied" | custom_thresholds 写入 |
 | 切 tab 回来 | UI 重新从 state 推 | 不变 |
-| Locked 模式试图编辑 | inputs `disabled=True` | 不变 |
+| Locked 模式试图编辑 | inputs `disabled=True` | custom_thresholds **保留**（不丢草稿） |
 | Editable 模式试图切 preset | 阻止 + 提示 "Preset change blocked in Edit Mode" | 不变 |
 | Routing Review 用旧 custom | review 路径走 `routing_state.get_thresholds()`，永远最新 | 走 fresh read |
 
