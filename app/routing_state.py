@@ -101,20 +101,29 @@ class RoutingState:
         return self.custom_thresholds or self.thresholds
 
     def set_frozen_mode(self, frozen: bool):
-        """Set frozen mode. When enabling frozen, discard any custom overrides.
-
-        Recommended over direct assignment to is_frozen / custom_thresholds.
-        Updates the backing _is_frozen; .is_frozen property will reflect it.
+        """Set frozen mode. Does NOT discard custom_thresholds — it is a
+        'draft area' that survives Locked<->Editable toggles (see spec 3.2.4).
+        get_thresholds() returns preset when frozen and custom (or preset
+        fallback) when editable; UI rehydrate handles the rest.
         """
         self._is_frozen = bool(frozen)
-        if frozen:
-            self.custom_thresholds = None
+
+    def set_custom(self, thresholds: "RoutingThresholds"):
+        """Adopt a custom thresholds object and switch to editable mode.
+
+        Replaces the previous custom_thresholds (if any). The state is now
+        editable; get_thresholds() will return this object.
+        """
+        self.custom_thresholds = thresholds
+        self._is_frozen = False
 
     def get_threshold_source(self) -> str:
-        """Human-readable source description for UI banners."""
+        """Human-readable source description for UI banners (English)."""
         if self._is_frozen:
-            return f"{self.current_preset}（冻结）"
-        return f"基于 {self.current_preset} 的自定义"
+            return f"Locked preset: {self.current_preset}"
+        if self.custom_thresholds is not None:
+            return f"Custom (based on {self.current_preset})"
+        return f"Preset: {self.current_preset}"
 
     def get_rc_model(self) -> RCModelConfig:
         """Return the active RC model (custom override or built-in default)."""

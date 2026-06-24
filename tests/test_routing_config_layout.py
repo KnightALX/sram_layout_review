@@ -395,8 +395,58 @@ def test_frozen_vs_editable_apply_persistence():
 
     # rehydrate after frozen switch shows original
     out_f2 = _compute_rehydrate_outputs()
-    assert abs(out_f2[tau_idx] - orig_tau) < 1e-12  # custom discarded on freeze -> preset orig_tau
+    assert abs(out_f2[tau_idx] - orig_tau) < 1e-12  # Custom is preserved (draft area); get() returns preset because frozen
 
     # cleanup
     _reset_routing_state_to_default()
+
+
+# --- Task 6: preserve custom_thresholds across Locked toggle ---
+
+
+def test_set_frozen_mode_true_preserves_custom_thresholds():
+    """Switching to Locked should NOT discard custom_thresholds (spec:draft area)."""
+    _reset_routing_state_to_default()
+    rs = global_routing_state
+    rs.set_frozen_mode(False)
+    # Simulate user applying a custom value
+    if rs.custom_thresholds is None:
+        rs.custom_thresholds = RoutingThresholds.from_dict(rs.get_thresholds().to_dict())
+    rs.custom_thresholds.max_tau_ps = 99.0
+    assert rs.custom_thresholds.max_tau_ps == 99.0
+
+    # Switch to Locked: custom should be preserved
+    rs.set_frozen_mode(True)
+    assert rs.custom_thresholds is not None
+    assert rs.custom_thresholds.max_tau_ps == 99.0
+    # get_thresholds() still returns the preset (frozen behavior)
+    preset = RoutingThresholds.for_preset(rs.current_preset)
+    assert abs(rs.get_thresholds().max_tau_ps - preset.max_tau_ps) < 1e-9
+
+
+def test_switch_back_to_editable_restores_custom():
+    """After Locked -> Editable, custom values should be visible again."""
+    _reset_routing_state_to_default()
+    rs = global_routing_state
+    rs.set_frozen_mode(False)
+    if rs.custom_thresholds is None:
+        rs.custom_thresholds = RoutingThresholds.from_dict(rs.get_thresholds().to_dict())
+    rs.custom_thresholds.max_tau_ps = 77.0
+    rs.set_frozen_mode(True)
+    rs.set_frozen_mode(False)
+    assert rs.custom_thresholds is not None
+    assert rs.custom_thresholds.max_tau_ps == 77.0
+    assert abs(rs.get_thresholds().max_tau_ps - 77.0) < 1e-9
+
+
+def test_set_custom_writes_and_keeps_editable():
+    """set_custom() should write to custom_thresholds and leave mode editable."""
+    _reset_routing_state_to_default()
+    rs = global_routing_state
+    new_thr = RoutingThresholds.from_dict(rs.get_thresholds().to_dict())
+    new_thr.max_r_ohm = 12.0
+    rs.set_custom(new_thr)
+    assert rs.custom_thresholds is new_thr
+    assert rs.is_frozen is False
+    assert abs(rs.get_thresholds().max_r_ohm - 12.0) < 1e-9
 
