@@ -80,7 +80,7 @@ def _build_threshold_source() -> html.Div:
     """Build the prominent banner showing active threshold source (preset + frozen/custom state)."""
     src = routing_state.get_threshold_source()
     return html.Div([
-        html.Span("当前阈值来源: ", style={"fontSize": "11px", "fontWeight": "600"}),
+        html.Span("Active Threshold Source: ", style={"fontSize": "11px", "fontWeight": "600"}),
         html.Span(src, style={
             "background": "rgba(5, 46, 22, 0.8)",
             "padding": "2px 6px",
@@ -290,7 +290,7 @@ def create_routing_review_tab():
         ),
 
         # Threshold source banner — shows active source from routing_state
-        # (e.g. "当前阈值来源: sram_7nm_wl（冻结）" or "基于 ... 的自定义")
+        # (e.g. "Active Threshold Source: sram_7nm_wl (Frozen)" or "Custom based on ...")
         # Updated by dedicated callback on tab/interval; initial value from state.
         html.Div(id="routing-threshold-source", children=_build_threshold_source()),
 
@@ -426,7 +426,7 @@ def register_routing_review_callbacks(app):
             return no_update
         return _empty_state_banner()
 
-    # --- 0b. Threshold source banner — keeps "当前阈值来源: xxx" in sync
+    # --- 0b. Threshold source banner — keeps "Active Threshold Source: xxx" in sync
     #         with Routing Config (preset + frozen/custom via get_threshold_source).
     @app.callback(
         Output("routing-threshold-source", "children"),
