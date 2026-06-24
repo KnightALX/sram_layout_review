@@ -22,6 +22,106 @@ from app.state import app_state
 from config.preset_loader import list_yaml_presets
 from config.routing_thresholds import RoutingThresholds
 
+
+# For test access to the complex preset/thresh handling logic (without requiring
+# a full Dash app or inner-callback extraction). Not part of public API surface.
+def _handle_routing_preset_or_thresh(
+    preset: Optional[str],
+    thresh_values: tuple,
+    trigger: Optional[str],
+) -> tuple:
+    """Testable core logic extracted from the large update callback.
+
+    Returns the tuple of output values in the same order as the callback
+    (so tests can assert on classes, statuses, values, disabled).
+    Side effects on routing_state are performed for preset/apply-like paths
+    (mirrors production). Callers in tests should reset state.
+    """
+    n_fields = len(THRESHOLD_FIELDS)
+    frozen = routing_state.is_frozen
+    dis_list = _disabled_list(frozen, n_fields)
+    f_cls, e_cls = _mode_button_classes(frozen)
+
+    # Preset switch path
+    if trigger == "routing-preset" and preset:
+        if preset == routing_state.current_preset:
+            # no-op guard (see improved revert logic)
+            # For direct test call, we simulate by returning a sentinel.
+            # Real cb raises PreventUpdate; here we raise for consistency in mocks.
+            from dash.exceptions import PreventUpdate
+            raise PreventUpdate
+
+        if not frozen:
+            curr_p = routing_state.current_preset
+            curr_thr = routing_state.get_thresholds()
+            curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
+            warn = "编辑模式：切换 Preset 已阻止（有未保存修改）。请先点击 Apply 或切换到“冻结”。"
+            dis_ed = _disabled_list(False, n_fields)
+            f_ed, e_ed = _mode_button_classes(False)
+            return tuple([
+                f_ed, e_ed,
+                f"Loaded: {curr_p}",
+                warn,
+                html.Span("● unsaved changes", style={
+                    "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+                "",
+                curr_p,
+            ] + curr_vals + dis_ed)
+
+        # frozen load
+        try:
+            from config.routing_thresholds import _BUILTIN_PRESETS
+            if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
+                t = RoutingThresholds.for_preset(preset)
+            else:
+                from config.preset_loader import load_preset_yaml as _load  # local alias
+                t = _load(preset)
+            routing_state.current_preset = preset
+            routing_state.thresholds = t
+            routing_state.custom_thresholds = None
+            routing_state.set_frozen_mode(True)
+            status = f"Loaded preset: {preset}"
+            thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
+            dis_f = _disabled_list(True, n_fields)
+            f_f, e_f = _mode_button_classes(True)
+            return tuple([f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset] + thresh_outputs + dis_f)
+        except Exception as e:
+            curr_vals = list(thresh_values) if thresh_values else [getattr(routing_state.get_thresholds(), name) for name, *_ in THRESHOLD_FIELDS]
+            return tuple([f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset] + curr_vals + dis_list)
+
+    # Manual thresh edit path (no side effect on state)
+    current = routing_state.get_thresholds()
+    tentative_dict = current.to_dict()
+    for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
+        if val is not None:
+            tentative_dict[name] = val
+    try:
+        tentative = RoutingThresholds.from_dict(tentative_dict)
+        tentative.validate()
+        dis_editable = _disabled_list(False, n_fields)
+        from dash import no_update as _no_update
+        return tuple([
+            f_cls, e_cls,
+            f"Loaded: {routing_state.current_preset}",
+            "",
+            html.Span("● unsaved changes", style={
+                "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+            html.Span("Thresholds modified — click Apply to save.",
+                      style={"fontSize": "10px", "color": "#E67E22"}),
+            _no_update,
+        ] + list(thresh_values) + dis_editable)
+    except Exception as e:
+        safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
+        from dash import no_update as _no_update
+        return tuple([
+            f_cls, e_cls,
+            f"Loaded: {routing_state.current_preset}",
+            f"Invalid: {e} (reverted)",
+            html.Span("", style={"display": "none"}),
+            html.Span(f"Invalid: {e}", style={"fontSize": "10px", "color": "#C0392B"}),
+            _no_update,
+        ] + safe_values + dis_list)
+
 THRESHOLD_FIELDS = [
     ("max_h_ratio", "Max H Ratio (WL gate)", "0.01", "0.99", "0.01"),
     ("max_v_ratio", "Max V Ratio (IO gate)", "0.01", "0.99", "0.01"),
@@ -31,6 +131,25 @@ THRESHOLD_FIELDS = [
     ("min_via_coverage", "Min Via Coverage", "0.0", "1.0", "0.01"),
     ("min_similarity", "Min Golden Similarity", "0", "100", "1"),
 ]
+
+
+def _mode_button_classes(frozen: bool) -> tuple[str, str]:
+    """Pure helper: return (frozen_button_class, editable_button_class).
+
+    Used by layout builder and all callbacks that touch mode buttons.
+    Reduces duplication of the ternary class logic.
+    """
+    if frozen:
+        return "btn btn-primary btn-sm", "btn btn-secondary btn-sm"
+    return "btn btn-secondary btn-sm", "btn btn-primary btn-sm"
+
+
+def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
+    """Pure helper: return disabled flags for threshold inputs.
+
+    frozen=True -> all disabled; frozen=False -> all enabled.
+    """
+    return [frozen] * n_fields
 
 
 def get_threshold_input_ids() -> List[str]:
@@ -140,6 +259,7 @@ def create_routing_config_tab():
     """Build the routing Configuration tab content (Dash components only)."""
     preset = routing_state.current_preset
     thr = routing_state.get_thresholds()
+    f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
 
     nets = sorted(app_state.nets_data.keys())
     first_net = nets[0] if nets else ""
@@ -161,15 +281,13 @@ def create_routing_config_tab():
                     html.Button(
                         "冻结",
                         id="mode-frozen",
-                        className=("btn btn-primary btn-sm"
-                                   if routing_state.is_frozen else "btn btn-secondary btn-sm"),
+                        className=f_cls,
                         style={"marginRight": "4px"},
                     ),
                     html.Button(
                         "可编辑",
                         id="mode-editable",
-                        className=("btn btn-secondary btn-sm"
-                                   if routing_state.is_frozen else "btn btn-primary btn-sm"),
+                        className=e_cls,
                     ),
                 ], style={"display": "flex", "gap": "4px", "marginTop": "8px"}),
                 html.Div(id="routing-preset-status",
@@ -286,7 +404,6 @@ def register_routing_config_callbacks(app):
     from dash import Input, Output, State, no_update
     from dash import ctx as dash_ctx
 
-    from config.preset_loader import load_preset_yaml
 
     # --- 1. Regex preview / loaded-nets status (cheap, no thresh updates) ---
     @app.callback(
@@ -372,7 +489,10 @@ def register_routing_config_callbacks(app):
     # --- 4. Preset switch → reload thresholds immediately (presets should
     #         apply instantly — only manual threshold edits require Apply).
     #         Respects is_frozen: frozen loads immediately; editable uses simple
-    #         status + prevent (revert dropdown) to avoid losing unsaved edits.
+    #         status + revert (dropdown) to avoid losing unsaved edits.
+    #         Revert improved with ctx-based no-op guard: after emitting revert
+    #         value we PreventUpdate on the follow-up fire (when preset==current)
+    #         to avoid duplicate status/flicker/extra triggers. Uses pure helpers.
     #         Also hooks thresh-* inputs + outputs disabled for mode support.
     #         Also hooks thresh-* inputs to prevent the preview refresh from
     #         killing thresh values. ---
@@ -393,89 +513,12 @@ def register_routing_config_callbacks(app):
     def update_routing_config(preset, *thresh_values):
         ctx = dash_ctx
         trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
-
-        n_fields = len(THRESHOLD_FIELDS)
-        frozen = routing_state.is_frozen
-        dis_list = [frozen] * n_fields
-        f_cls = "btn btn-primary btn-sm" if frozen else "btn btn-secondary btn-sm"
-        e_cls = "btn btn-secondary btn-sm" if frozen else "btn btn-primary btn-sm"
-
-        # Preset switch → respect frozen vs editable (Task 4 step 4 + 6)
-        if trigger == "routing-preset" and preset:
-            if not frozen:
-                # Editable: prevent switch to protect unsaved changes (simple status+prevent, no ConfirmDialog)
-                curr_p = routing_state.current_preset
-                curr_thr = routing_state.get_thresholds()
-                curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
-                warn = "编辑模式：切换 Preset 已阻止（有未保存修改）。请先点击 Apply 或切换到“冻结”。"
-                dis_ed = [False] * n_fields
-                f_ed = "btn btn-secondary btn-sm"
-                e_ed = "btn btn-primary btn-sm"
-                return [
-                    f_ed, e_ed,
-                    f"Loaded: {curr_p}",
-                    warn,
-                    html.Span("● unsaved changes", style={
-                        "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-                    "",
-                    curr_p,  # revert dropdown visually
-                ] + curr_vals + dis_ed
-
-            # Frozen path: load immediately, clear custom, force frozen
-            try:
-                from config.routing_thresholds import _BUILTIN_PRESETS
-                if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
-                    t = RoutingThresholds.for_preset(preset)  # code-only path
-                else:
-                    t = load_preset_yaml(preset)  # YAML path
-                routing_state.current_preset = preset
-                routing_state.thresholds = t
-                routing_state.custom_thresholds = None
-                routing_state.set_frozen_mode(True)
-                status = f"Loaded preset: {preset}"
-                thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
-                dis_f = [True] * n_fields
-                f_f = "btn btn-primary btn-sm"
-                e_f = "btn btn-secondary btn-sm"
-                return [f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset] + thresh_outputs + dis_f
-            except Exception as e:
-                curr_vals = list(thresh_values) if thresh_values else [getattr(routing_state.get_thresholds(), name) for name, *_ in THRESHOLD_FIELDS]
-                return [f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset] + curr_vals + dis_list
-
-        # Manual threshold edit → validate UI only, do NOT commit to state.
-        # Show "unsaved changes" badge so the user knows to click Apply.
-        # Only meaningful in editable (frozen inputs are disabled so shouldn't reach here).
-        current = routing_state.get_thresholds()
-        tentative_dict = current.to_dict()
-        for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
-            if val is not None:
-                tentative_dict[name] = val
+        # Delegate to the extracted testable logic (keeps callback thin, enables direct mocked calls in tests)
         try:
-            tentative = RoutingThresholds.from_dict(tentative_dict)
-            tentative.validate()
-            # Validation passed — show unsaved badge, keep inputs as-is
-            # Note: manual edit path implies editable (dis=False), buttons reflect current frozen (from state)
-            return [
-                f_cls, e_cls,
-                f"Loaded: {routing_state.current_preset}",
-                "",
-                html.Span("● unsaved changes", style={
-                    "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-                html.Span("Thresholds modified — click Apply to save.",
-                          style={"fontSize": "10px", "color": "#E67E22"}),
-                no_update,  # do not touch preset dropdown
-            ] + list(thresh_values) + [False] * n_fields
-        except Exception as e:
-            # Invalid values — snap back to last-known-good, show error
-            safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
-            return [
-                f_cls, e_cls,
-                f"Loaded: {routing_state.current_preset}",
-                f"Invalid: {e} (reverted)",
-                html.Span("", style={"display": "none"}),
-                html.Span(f"Invalid: {e}", style={"fontSize": "10px", "color": "#C0392B"}),
-                no_update,
-            ] + safe_values + dis_list
+            return _handle_routing_preset_or_thresh(preset, thresh_values, trigger)
+        except Exception:
+            # Re-raise PreventUpdate etc. as-is; other errors fall to Dash
+            raise
 
     # --- 5. Apply Thresholds button — validates and commits to routing_state ---
     # Enhances to set is_frozen=False (editable) on commit (Task 4 step 5).
@@ -502,9 +545,9 @@ def register_routing_config_callbacks(app):
             tentative.validate()
         except Exception as e:
             safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
-            dis = [routing_state.is_frozen] * len(THRESHOLD_FIELDS)
-            f_cls = "btn btn-primary btn-sm" if routing_state.is_frozen else "btn btn-secondary btn-sm"
-            e_cls = "btn btn-secondary btn-sm" if routing_state.is_frozen else "btn btn-primary btn-sm"
+            frozen_now = routing_state.is_frozen
+            dis = _disabled_list(frozen_now, len(THRESHOLD_FIELDS))
+            f_cls, e_cls = _mode_button_classes(frozen_now)
             return (
                 [f_cls, e_cls,
                  html.Span(f"✗ Apply failed: {e}", style={"fontSize": "11px", "color": "#C0392B"}),
@@ -525,9 +568,8 @@ def register_routing_config_callbacks(app):
         # Per spec: Apply commits and sets appropriate mode (editable)
         routing_state.set_frozen_mode(False)
 
-        f_cls = "btn btn-secondary btn-sm"
-        e_cls = "btn btn-primary btn-sm"
-        dis_editable = [False] * len(THRESHOLD_FIELDS)
+        f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
+        dis_editable = _disabled_list(routing_state.is_frozen, len(THRESHOLD_FIELDS))
         return (
             [f_cls, e_cls,
              html.Span("✓ Thresholds applied successfully.",
@@ -566,9 +608,8 @@ def register_routing_config_callbacks(app):
             routing_state.set_frozen_mode(True)
             thr = routing_state.get_thresholds()
             vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-            f_cls = "btn btn-primary btn-sm"
-            e_cls = "btn btn-secondary btn-sm"
-            dis_list = [True] * n_fields
+            f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
+            dis_list = _disabled_list(routing_state.is_frozen, n_fields)
             return [
                 f_cls, e_cls,
                 f"Mode: 冻结（{routing_state.current_preset}）",
@@ -586,9 +627,8 @@ def register_routing_config_callbacks(app):
             routing_state.set_frozen_mode(False)
             thr = routing_state.get_thresholds()
             vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-            f_cls = "btn btn-secondary btn-sm"
-            e_cls = "btn btn-primary btn-sm"
-            dis_list = [False] * n_fields
+            f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
+            dis_list = _disabled_list(routing_state.is_frozen, n_fields)
             return [
                 f_cls, e_cls,
                 "Mode: 可编辑（基于 preset，修改后需 Apply）",

@@ -9,6 +9,9 @@ USAGE CONTRACT (important for callers):
 - Use .set_frozen_mode() (and related setters if any) to change mode.
 - Direct assignment can bypass frozen invariant and cause preset/custom
   mismatch. Prefer get_thresholds() + set_frozen_mode() over raw access.
+- For presentation/UI (button classes, disabled state, layout decisions):
+  .is_frozen (property) is the supported thin read accessor. Direct attribute
+  read is acceptable via the property for these cases.
 """
 from __future__ import annotations
 
@@ -34,10 +37,28 @@ class RoutingState:
     # Custom overrides (None means use preset)
     custom_thresholds: Optional[RoutingThresholds] = None
 
-    # Explicit frozen mode (default True).
+    # Explicit frozen mode (default True). Internal storage uses _is_frozen;
+    # the public .is_frozen property is the thin accessor for UI reads.
     # When True, get_thresholds() returns the preset value (ignores custom).
     # UI inputs are disabled. Enforcement is now authoritative in get_thresholds().
-    is_frozen: bool = True
+    _is_frozen: bool = field(default=True, repr=False)
+
+    @property
+    def is_frozen(self) -> bool:
+        """Thin accessor for frozen mode (read-only for presentation/UI).
+
+        UI code (layout builders + callbacks) reads this for button classes,
+        disabled flags, and mode decisions. This fulfills the documented
+        contract while allowing simple attribute-style reads like `if s.is_frozen`.
+        Writes MUST use set_frozen_mode(); direct assignment is forwarded for
+        backward compat in tests but is not recommended.
+        """
+        return self._is_frozen
+
+    @is_frozen.setter
+    def is_frozen(self, value: bool):
+        """Allow assignment for compat (e.g. test code), but delegates to set_frozen_mode."""
+        self.set_frozen_mode(bool(value))
 
     # Golden + batch (regex strings; resolved against app_state.nets_data)
     golden_regex: str = ""
@@ -66,7 +87,7 @@ class RoutingState:
         Note: get_thresholds() is now the authoritative reader and also
         respects is_frozen regardless of custom_thresholds state.
         """
-        if self.is_frozen:
+        if self._is_frozen:
             self.custom_thresholds = None
 
     def get_thresholds(self) -> RoutingThresholds:
@@ -75,7 +96,7 @@ class RoutingState:
         Authoritative: when is_frozen, always return the preset (custom is ignored).
         Callers should use this instead of accessing .custom_thresholds or .thresholds.
         """
-        if self.is_frozen:
+        if self._is_frozen:
             return self.thresholds
         return self.custom_thresholds or self.thresholds
 
@@ -83,14 +104,15 @@ class RoutingState:
         """Set frozen mode. When enabling frozen, discard any custom overrides.
 
         Recommended over direct assignment to is_frozen / custom_thresholds.
+        Updates the backing _is_frozen; .is_frozen property will reflect it.
         """
-        self.is_frozen = frozen
+        self._is_frozen = bool(frozen)
         if frozen:
             self.custom_thresholds = None
 
     def get_threshold_source(self) -> str:
         """Human-readable source description for UI banners."""
-        if self.is_frozen:
+        if self._is_frozen:
             return f"{self.current_preset}（冻结）"
         return f"基于 {self.current_preset} 的自定义"
 
@@ -101,7 +123,7 @@ class RoutingState:
     def reset_review(self):
         """Clear only review execution results.
 
-        Threshold mode (is_frozen, custom_thresholds, current_preset, thresholds)
+        Threshold mode (is_frozen via _is_frozen, custom_thresholds, current_preset, thresholds)
         is intentionally preserved — reset_review is used before re-running
         analysis, not to reset configuration.
         """
