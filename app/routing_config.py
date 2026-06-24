@@ -178,6 +178,29 @@ def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
     return [frozen] * n_fields
 
 
+def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], Optional[str]]:
+    """Validate 7 threshold input values for Apply.
+
+    Returns:
+        (valid_thresholds, None) on success
+        (None, error_message) on failure
+
+    A `None` value in thresh_values means "use the current state value" (the
+    input was empty). It does NOT mean invalid.
+    """
+    current = routing_state.get_thresholds()
+    tentative_dict = current.to_dict()
+    for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
+        if val is not None:
+            tentative_dict[name] = val
+    try:
+        tentative = RoutingThresholds.from_dict(tentative_dict)
+        tentative.validate()
+    except Exception as e:
+        return None, str(e)
+    return tentative, None
+
+
 def _compute_rehydrate_outputs():
     """Return the full tuple of outputs to re-populate Routing Config controls from state.
 
