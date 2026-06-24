@@ -5,9 +5,9 @@ interconnect wires and vias.  This is the "source of truth" for the
 `RC Prediction` tab and the values it pushes into the rest of the app.
 
 Three expert perspectives are reflected in the section comments:
-  - 工艺专家 (process): sheet R, thickness, width, tempco, via R
-  - EDA 专家 (extraction): dielectric, min_space, fringe / coupling split
-  - 建模专家 (modeling):  lumped-π / T / distributed, segment length, gnd/cpl ratio
+  - Process expert: sheet R, thickness, width, tempco, via R
+  - EDA expert (extraction): dielectric, min_space, fringe / coupling split
+  - Modeling expert: lumped-π / T / distributed, segment length, gnd/cpl ratio
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ class RCModelConfig:
     those extraction rules would look like for *this* design.
     """
 
-    # ---- 工艺基础 (process expert) --------------------------------------
+    # ---- Process foundation (process expert) --------------------------------------
     tech_node: str = "7nm"
     temperature_c: float = 85.0  # junction temperature, °C
     metal_r_sheet: Dict[str, float] = field(
@@ -77,7 +77,7 @@ class RCModelConfig:
     )
     via_resistance_tempco: float = 0.003
 
-    # ---- 介电 / 寄生 (EDA / CAD expert) ---------------------------------
+    # ---- Dielectric / parasitic (EDA / CAD expert) ---------------------------------
     dielectric_constant: float = 3.9  # ILD effective ε_r (low-k ~ 2.5–3.5)
     min_space: Dict[str, float] = field(
         default_factory=lambda: dict(DEFAULT_MIN_SPACE)
@@ -85,7 +85,7 @@ class RCModelConfig:
     fringe_cap_factor: float = 0.6   # 0.5–0.8 typical
     coupling_cap_factor: float = 0.3  # fraction of total C that is to neighbors
 
-    # ---- 延迟线建模 (delay-line modeling expert) -----------------------
+    # ---- Delay-line modeling (delay-line modeling expert) -----------------------
     model_type: str = ModelType.LUMPED_PI.value
     length_per_segment_um: float = 50.0  # length of each π/T segment
     use_ground_cap_70_30: bool = True    # 70 % gnd / 30 % coupling split
