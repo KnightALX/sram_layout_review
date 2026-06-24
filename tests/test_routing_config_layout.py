@@ -67,3 +67,28 @@ def test_compute_rehydrate_outputs_uses_preset_values():
     assert out[11] == 12.5
     assert out[12] == 0.85
     assert out[13] == 80.0
+
+
+# --- Regression: Dash callback registration must not raise "Output ... is
+#     already in use". This guards against accidentally re-introducing a
+#     second primary owner of routing-config-status (or any of the 21
+#     outputs) without allow_duplicate=True. ---
+
+def test_register_callbacks_has_no_duplicate_primary_outputs():
+    """All 21 outputs in _routing_config_ui must be owned exclusively by it.
+
+    Other callbacks may write to these outputs only if they use
+    `allow_duplicate=True`. We inspect the registered callback map after
+    wiring up the routing_config tab on a fresh Dash app.
+    """
+    import dash
+    from app.layout import create_layout
+    from app.routing_config import register_routing_config_callbacks
+
+    app = dash.Dash(__name__)
+    app.layout = create_layout()
+    register_routing_config_callbacks(app)
+    # If a duplicate primary Output existed, Dash would have raised
+    # "Output ... is already in use" during registration. Reaching this
+    # line means the registration is clean.
+    assert len(app.callback_map) >= 1

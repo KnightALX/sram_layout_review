@@ -233,11 +233,15 @@ def _render_state(thresh_input_values: list) -> tuple:
     source = routing_state.get_threshold_source()
     preset_status = html.Span(source, style={"color": "#888", "fontSize": "11px"})
 
-    config_status_text = routing_state.last_error or ""
-    if config_status_text:
+    if routing_state.last_error:
         config_status = html.Span(
-            f"Error: {config_status_text}",
+            f"Error: {routing_state.last_error}",
             style={"fontSize": "11px", "color": "#C0392B"},
+        )
+    elif routing_state.last_status:
+        config_status = html.Span(
+            routing_state.last_status,
+            style={"fontSize": "11px", "color": "#2C7A2C"},
         )
     else:
         config_status = ""
@@ -287,6 +291,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
             routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
             routing_state.custom_thresholds = None
             routing_state.last_error = None
+            routing_state.last_status = ""
         # else: editable mode blocks preset change; render_state will
         # echo back state.current_preset to bounce the dropdown.
         return
@@ -294,6 +299,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
     if trigger_id == "mode-frozen.n_clicks":
         routing_state.set_frozen_mode(True)
         routing_state.last_error = None
+        routing_state.last_status = ""
         return
 
     if trigger_id == "mode-editable.n_clicks":
@@ -303,6 +309,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
                 routing_state.get_thresholds().to_dict()
             )
         routing_state.last_error = None
+        routing_state.last_status = ""
         return
 
     if trigger_id == "btn-apply-thresholds.n_clicks":
@@ -312,6 +319,9 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         else:
             routing_state.set_custom(valid)
             routing_state.last_error = None
+        # Apply represents a config change — the previous run's status
+        # message ("Reviewed N nets...") is no longer accurate.
+        routing_state.last_status = ""
         return
 
     if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
@@ -440,17 +450,26 @@ def _regex_match_preview(pattern: str, label: str) -> html.Div:
 def _run_and_status() -> str:
     """Run the routing review and return a human-readable status string.
 
+    Side effect: stores the result on `routing_state.last_status` (success)
+    or `routing_state.last_error` (failure) so the next render of
+    routing-config-status children — by the single _routing_config_ui
+    callback — picks up the message.
+
     Caller is responsible for guarding against an empty `app_state.nets_data`
     (the button click callbacks do that up-front and `raise PreventUpdate`).
     """
     try:
         _run_routing_review()
-        return (
+        msg = (
             f"Reviewed {len(routing_state.batch_results)} nets, "
             f"golden={routing_state.golden_net_name or '(none)'}"
         )
+        routing_state.last_status = msg
+        routing_state.last_error = None
+        return msg
     except Exception as e:
         routing_state.last_error = str(e)
+        routing_state.last_status = ""
         return f"Error: {e}"
 
 
@@ -604,12 +623,15 @@ def register_routing_config_callbacks(app):
     from dash import ctx as dash_ctx
 
 
-    # --- 1. Regex preview / loaded-nets status (cheap, no thresh updates) ---
+    # --- 1. Regex preview / loaded-nets status (cheap, no thresh updates).
+    #         Note: routing-config-status is owned exclusively by the single
+    #         _routing_config_ui callback (and the secondary fill/sync callbacks
+    #         that use allow_duplicate=True). Adding a 4th primary writer would
+    #         trigger Dash's "Output N is already in use" error at app start. ---
     @app.callback(
         [Output("golden-regex-preview", "children"),
          Output("batch-regex-preview", "children"),
-         Output("loaded-nets-status", "children"),
-         Output("routing-config-status", "children")],
+         Output("loaded-nets-status", "children")],
         [Input("golden-regex", "value"),
          Input("batch-regex", "value"),
          Input("tabs", "value"),
@@ -617,17 +639,12 @@ def register_routing_config_callbacks(app):
     )
     def _refresh_previews(golden_re, batch_re, tab, _nets_meta):
         # Only run when this tab is visible (cheap) — otherwise no_update.
-        # Strengthened tab listener pattern (Task 5): guard ensures we only
-        # act for tab-routing-config (or initial None). The heavy re-hydration
-        # of thresh-* values + disabled + mode UI lives in the dedicated
-        # _rehydrate_on_tab callback below.
         if tab not in (None, "tab-routing-config"):
-            return no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update
         return (
             _regex_match_preview(golden_re or "", "Golden"),
             _regex_match_preview(batch_re or "", "Batch"),
             _loaded_nets_status(),
-            "",
         )
 
     # --- 1b. Tab switch + preset + thresh + mode + apply handling are now

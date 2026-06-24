@@ -80,6 +80,11 @@ class RoutingState:
 
     review_completed: bool = False
     last_error: Optional[str] = None
+    # Human-readable status of the most recent review run (e.g.
+    # "Reviewed 5 nets, golden=clk_buf_0"). Distinct from `last_error`,
+    # which is reserved for error states. The single _routing_config_ui
+    # callback renders this into routing-config-status.children.
+    last_status: str = ""
 
     def __post_init__(self):
         """Enforce defaults: frozen mode starts with no custom overrides.
@@ -142,6 +147,7 @@ class RoutingState:
         self.batch_results = {}
         self.review_completed = False
         self.last_error = None
+        self.last_status = ""
 
 
 # Module-level singleton
