@@ -503,10 +503,18 @@ def register_routing_config_callbacks(app):
         Input("tabs", "value"),
         prevent_initial_call=True,
     )
-    def _rehydrate_on_tab(tab):
-        if tab != "tab-routing-config":
-            n_out = 7 + 2 * len(THRESHOLD_FIELDS)
-            return tuple(no_update for _ in range(n_out))
+    def _rehydrate_on_tab(active_tab):
+        """Rehydrate the Routing Config tab when the user switches to it.
+
+        This is the bug fix: previously, switching tabs away and back did not
+        re-populate the threshold inputs from state, so Apply'd values were
+        not visible on the UI after returning. We now emit all thresh values
+        + disabled flags + mode classes on every tab activation.
+        """
+        from dash.exceptions import PreventUpdate as _PreventUpdate
+        if active_tab != "tab-routing-config":
+            # Don't disturb other tabs
+            raise _PreventUpdate
         # Delegate to pure helper (testable, mirrors the "if tab == ..." shape in the plan).
         return _compute_rehydrate_outputs()
 
