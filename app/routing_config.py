@@ -265,6 +265,65 @@ def _render_state(thresh_input_values: list) -> tuple:
     ] + vals + dis_list)
 
 
+def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
+    """Mutate routing_state based on which input triggered the callback.
+
+    trigger_id: e.g. "routing-preset.value", "mode-frozen.n_clicks",
+                "btn-apply-thresholds.n_clicks", "thresh-max_tau_ps.value",
+                "tabs.value", or None for initial render.
+    trigger_value: the value associated with the trigger (preset name,
+                   n_clicks count, thresh input value, tab id).
+    thresh_values: tuple of 7 current thresh input values (only meaningful
+                   for the Apply trigger).
+    """
+    if trigger_id is None:
+        # Initial render: nothing to do; state is already set.
+        return
+
+    if trigger_id == "routing-preset.value":
+        new_preset = trigger_value
+        if routing_state.is_frozen:
+            routing_state.current_preset = new_preset
+            routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
+            routing_state.custom_thresholds = None
+            routing_state.last_error = None
+        # else: editable mode blocks preset change; render_state will
+        # echo back state.current_preset to bounce the dropdown.
+        return
+
+    if trigger_id == "mode-frozen.n_clicks":
+        routing_state.set_frozen_mode(True)
+        routing_state.last_error = None
+        return
+
+    if trigger_id == "mode-editable.n_clicks":
+        routing_state.set_frozen_mode(False)
+        if routing_state.custom_thresholds is None:
+            routing_state.custom_thresholds = RoutingThresholds.from_dict(
+                routing_state.get_thresholds().to_dict()
+            )
+        routing_state.last_error = None
+        return
+
+    if trigger_id == "btn-apply-thresholds.n_clicks":
+        valid, err = _validate_apply(thresh_values)
+        if valid is None:
+            routing_state.last_error = err
+        else:
+            routing_state.set_custom(valid)
+            routing_state.last_error = None
+        return
+
+    if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
+        # User typing in a thresh input: no state mutation.
+        # _render_state will detect the diff and show the unsaved badge.
+        return
+
+    if trigger_id == "tabs.value":
+        # Tab switch: nothing to mutate; just re-render.
+        return
+
+
 def _compute_rehydrate_outputs():
     """Return the full tuple of outputs to re-populate Routing Config controls from state.
 
