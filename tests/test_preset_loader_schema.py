@@ -30,8 +30,8 @@ def test_missing_field_falls_back_to_default():
     try:
         t = load_preset_from_file(path)
         assert t.max_h_ratio == 0.42
-        # min_similarity should fall back to RoutingThresholds default (70.0)
-        assert t.min_similarity == 70.0
+        # min_similarity should fall back to RoutingThresholds default (80.0)
+        assert t.min_similarity == 80.0
     finally:
         os.unlink(path)
 
