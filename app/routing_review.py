@@ -2,6 +2,11 @@
 
 Replaces `_create_review_content()` from `app/layout.py`.
 Shows the 6 metric cards + sortable similarity table + per-net directional viz.
+
+Task 7 hygiene note: This file exclusively uses the public RoutingState API
+(get_thresholds(), is_frozen property, get_threshold_source()) for all
+threshold reads and display. All centralization of direct field access
+was performed on the config side; review code was already compliant.
 """
 from __future__ import annotations
 

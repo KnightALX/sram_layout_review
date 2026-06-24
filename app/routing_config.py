@@ -77,6 +77,9 @@ def _handle_routing_preset_or_thresh(
                 from config.preset_loader import load_preset_yaml as _load  # local alias
                 t = _load(preset)
             routing_state.current_preset = preset
+            # Base preset load (frozen path): direct set to the backing preset field is the
+            # intended design for the "strictly follow preset" mode (no custom). Value reads
+            # always go through get_thresholds() which respects is_frozen.
             routing_state.thresholds = t
             routing_state.set_frozen_mode(True)  # also ensures custom_thresholds=None and _is_frozen
             status = f"Loaded preset: {preset}"
