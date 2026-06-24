@@ -630,39 +630,9 @@ def register_routing_config_callbacks(app):
             "",
         )
 
-    # --- 1b. Tab switch re-hydration (Task 5 Step 1).
-    #         When the user activates (or returns to) the Routing Config tab,
-    #         re-populate all threshold inputs from the *authoritative* state
-    #         (routing_state.get_thresholds()), set correct disabled flags per
-    #         current is_frozen, and restore the mode button classes.
-    #         This fixes "tab switch loses values" / "apply invalid" symptoms.
-    @app.callback(
-        [Output("mode-frozen", "className", allow_duplicate=True),
-         Output("mode-editable", "className", allow_duplicate=True),
-         Output("routing-preset-status", "children", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True),
-         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
-         Output("thresh-apply-status", "children", allow_duplicate=True),
-         Output("routing-preset", "value", allow_duplicate=True)]
-        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
-        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
-        Input("tabs", "value"),
-        prevent_initial_call=True,
-    )
-    def _rehydrate_on_tab(active_tab):
-        """Rehydrate the Routing Config tab when the user switches to it.
-
-        This is the bug fix: previously, switching tabs away and back did not
-        re-populate the threshold inputs from state, so Apply'd values were
-        not visible on the UI after returning. We now emit all thresh values
-        + disabled flags + mode classes on every tab activation.
-        """
-        from dash.exceptions import PreventUpdate as _PreventUpdate
-        if active_tab != "tab-routing-config":
-            # Don't disturb other tabs
-            raise _PreventUpdate
-        # Delegate to pure helper (testable, mirrors the "if tab == ..." shape in the plan).
-        return _compute_rehydrate_outputs()
+    # --- 1b. Tab switch + preset + thresh + mode + apply handling are now
+    #         unified in a single _routing_config_ui callback further down
+    #         (Task 5: eliminates 4 overlapping callbacks with allow_duplicate=True).
 
     # --- 2. Quick-fill buttons (each does everything: set regex + run review +
     #         navigate to the Routing Review tab). One click, one result. ---
@@ -723,162 +693,73 @@ def register_routing_config_callbacks(app):
         # otherwise blank the run status on quick-fill clicks.
         return no_update
 
-    # --- 4. Preset switch → reload thresholds immediately (presets should
-    #         apply instantly — only manual threshold edits require Apply).
-    #         Respects is_frozen: frozen loads immediately; editable uses simple
-    #         status + revert (dropdown) to avoid losing unsaved edits.
-    #         Revert improved with ctx-based no-op guard: after emitting revert
-    #         value we PreventUpdate on the follow-up fire (when preset==current)
-    #         to avoid duplicate status/flicker/extra triggers. Uses pure helpers.
-    #         Also hooks thresh-* inputs + outputs disabled for mode support.
-    #         Also hooks thresh-* inputs to prevent the preview refresh from
-    #         killing thresh values. ---
+    # (Preset switch + thresh input handling moved to _routing_config_ui.)
+
+    # (Apply Thresholds button handling moved to _routing_config_ui.)
+
+    # --- 6. Unified single callback for the entire Routing Config tab.
+    #         Replaces the 4 overlapping callbacks (_rehydrate_on_tab,
+    #         update_routing_config, _apply_thresholds, _switch_mode) which all
+    #         wrote to the same 21 Outputs and required `allow_duplicate=True`.
+    #         This single callback owns ALL 21 Outputs and uses ctx.triggered
+    #         to dispatch state mutations via _dispatch_action + render via
+    #         _render_state. NO allow_duplicate=True anywhere. ---
     @app.callback(
-        [Output("mode-frozen", "className", allow_duplicate=True),
-         Output("mode-editable", "className", allow_duplicate=True),
-         Output("routing-preset-status", "children", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True),
-         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
-         Output("thresh-apply-status", "children", allow_duplicate=True),
-         Output("routing-preset", "value", allow_duplicate=True)]
+        [Output("mode-frozen", "className"),
+         Output("mode-editable", "className"),
+         Output("routing-preset-status", "children"),
+         Output("routing-config-status", "children"),
+         Output("thresh-unsaved-badge", "children"),
+         Output("thresh-apply-status", "children"),
+         Output("routing-preset", "value")]
         + [Output(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS]
         + [Output(f"thresh-{name}", "disabled") for name, *_ in THRESHOLD_FIELDS],
-        [Input("routing-preset", "value")]
+        [Input("routing-preset", "value"),
+         Input("mode-frozen", "n_clicks"),
+         Input("mode-editable", "n_clicks"),
+         Input("btn-apply-thresholds", "n_clicks"),
+         Input("tabs", "value")]
         + [Input(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
-        prevent_initial_call=True,
-    )
-    def update_routing_config(preset, *thresh_values):
-        ctx = dash_ctx
-        trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
-        # Delegate to the extracted testable logic (keeps callback thin, enables direct mocked calls in tests)
-        try:
-            return _handle_routing_preset_or_thresh(preset, thresh_values, trigger)
-        except Exception:
-            # Re-raise PreventUpdate etc. as-is; other errors fall to Dash
-            raise
-
-    # --- 5. Apply Thresholds button — validates and commits to routing_state ---
-    # Always updates state (custom + is_frozen) and clears badges on success (Task 5 Step 2).
-    # Sets is_frozen based on the post-apply mode (editable after committing edits).
-    @app.callback(
-        [Output("mode-frozen", "className", allow_duplicate=True),
-         Output("mode-editable", "className", allow_duplicate=True),
-         Output("thresh-apply-status", "children", allow_duplicate=True),
-         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True)]
-        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
-        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
-        Input("btn-apply-thresholds", "n_clicks"),
         [State(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
-        prevent_initial_call=True,
+        prevent_initial_call=False,
     )
-    def _apply_thresholds(_n, *thresh_values):
-        current = routing_state.get_thresholds()
-        tentative_dict = current.to_dict()
-        for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
-            if val is not None:
-                tentative_dict[name] = val
-        try:
-            tentative = RoutingThresholds.from_dict(tentative_dict)
-            tentative.validate()
-        except Exception as e:
-            safe_values = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
-            frozen_now = routing_state.is_frozen
-            dis = _disabled_list(frozen_now, len(THRESHOLD_FIELDS))
-            f_cls, e_cls = _mode_button_classes(frozen_now)
-            return (
-                [f_cls, e_cls,
-                 html.Span(f"✗ Apply failed: {e}", style={"fontSize": "11px", "color": "#C0392B"}),
-                 html.Span("● unsaved changes", style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-                 f"Apply failed: {e}"]
-                + safe_values + dis
-            )
+    def _routing_config_ui(
+        preset_value, _f_clicks, _e_clicks, _apply_clicks, tab,
+        *thresh_inputs_and_state
+    ):
+        """Single state-driven callback for the entire Routing Config tab.
 
-        # Commit to routing_state + switch to editable mode (custom active).
-        # Always update state and clear badges (Task 5).
-        if routing_state.custom_thresholds is None:
-            # centralize read: use get_thresholds() (frozen at this point => returns base preset)
-            routing_state.custom_thresholds = RoutingThresholds.from_dict(
-                routing_state.get_thresholds().to_dict()
-            )
-        for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
-            if val is not None:
-                setattr(routing_state.custom_thresholds, name, val)
+        - Reads `ctx.triggered` to identify the action
+        - Mutates `routing_state` (via _dispatch_action)
+        - Projects state to 21 UI outputs (via _render_state)
 
-        # Set is_frozen based on the applied mode: after Apply we are in editable (not frozen).
-        post_apply_frozen = False
-        routing_state.set_frozen_mode(post_apply_frozen)
+        NO allow_duplicate=True anywhere. This is the ONLY callback that
+        writes to these 21 Outputs.
+        """
+        from dash import callback_context as _ctx
+        from dash.exceptions import PreventUpdate as _PreventUpdate
 
-        f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
-        dis_editable = _disabled_list(routing_state.is_frozen, len(THRESHOLD_FIELDS))
-        # Success path explicitly clears unsaved badge and sets clean apply status.
-        return (
-            [f_cls, e_cls,
-             html.Span("✓ Thresholds applied successfully.",
-                       style={"fontSize": "11px", "color": "#27AE60", "fontWeight": "600"}),
-             html.Span("", style={"display": "none"}),  # clear unsaved badge
-             f"Thresholds applied (preset: {routing_state.current_preset})"]
-            + list(thresh_values) + dis_editable
-        )
+        # The 7 thresh inputs appear as both Inputs (for "user typed" detection)
+        # and State (for Apply action). Since Dash passes them in declaration
+        # order, the LAST 7 args (after the 5 head inputs) are the State copies.
+        thresh_state = thresh_inputs_and_state[-len(THRESHOLD_FIELDS):]
+        thresh_inputs = thresh_inputs_and_state[:len(THRESHOLD_FIELDS)]
 
-    # --- Mode switch callbacks (Task 4 step 3) ---
-    # New callbacks for mode buttons that set routing_state.is_frozen (via set_frozen_mode)
-    # and reload values. When switching to editable from frozen, always copy current to custom.
-    mode_button_outputs = (
-        [Output("mode-frozen", "className", allow_duplicate=True),
-         Output("mode-editable", "className", allow_duplicate=True),
-         Output("routing-preset-status", "children", allow_duplicate=True),
-         Output("routing-config-status", "children", allow_duplicate=True),
-         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
-         Output("thresh-apply-status", "children", allow_duplicate=True)]
-        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
-        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
-    )
+        if not _ctx.triggered:
+            # Initial render: dispatch_action is a no-op, just render.
+            return _render_state(list(thresh_state))
 
-    @app.callback(
-        mode_button_outputs,
-        [Input("mode-frozen", "n_clicks"),
-         Input("mode-editable", "n_clicks")],
-        prevent_initial_call=True,
-    )
-    def _switch_mode(f_nclicks, e_nclicks):
-        ctx = dash_ctx
-        trigger = ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None
-        n_fields = len(THRESHOLD_FIELDS)
+        trigger_id = _ctx.triggered[0]["prop_id"]
+        trigger_value = _ctx.triggered[0]["value"]
 
-        if trigger == "mode-frozen":
-            routing_state.set_frozen_mode(True)
-            thr = routing_state.get_thresholds()
-            vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-            f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
-            dis_list = _disabled_list(routing_state.is_frozen, n_fields)
-            return [
-                f_cls, e_cls,
-                f"Mode: Locked ({routing_state.current_preset})",
-                "",
-                html.Span("", style={"display": "none"}),
-                "",
-            ] + vals + dis_list
+        # Tab switch: only act when switching TO routing-config
+        if trigger_id == "tabs.value":
+            if trigger_value != "tab-routing-config":
+                raise _PreventUpdate
+            # else: fall through to dispatch (no-op for tabs) + render
 
-        if trigger == "mode-editable":
-            # Always copy current (from preset) to custom if needed (per spec + requirement)
-            if routing_state.custom_thresholds is None:
-                # centralize read via get_thresholds() (at switch time, base preset is active)
-                routing_state.custom_thresholds = RoutingThresholds.from_dict(
-                    routing_state.get_thresholds().to_dict()
-                )
-            routing_state.set_frozen_mode(False)
-            thr = routing_state.get_thresholds()
-            vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-            f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
-            dis_list = _disabled_list(routing_state.is_frozen, n_fields)
-            return [
-                f_cls, e_cls,
-                "Mode: Editable (based on preset, Apply required after edits)",
-                "",
-                html.Span("", style={"display": "none"}),
-                "",
-            ] + vals + dis_list
+        # Dispatch state mutation
+        _dispatch_action(trigger_id, trigger_value, tuple(thresh_state))
 
-        # Should not reach
-        raise dash_ctx.PreventUpdate
+        # Project state to UI
+        return _render_state(list(thresh_state))
