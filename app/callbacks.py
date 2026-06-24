@@ -498,18 +498,17 @@ def register_callbacks(app: Dash):
     # =========================================================================
 
     def _properties_panel_values(selected_nets):
-        """Build the 13 property-panel fields for the current net selection."""
-        zeros_tail = (
-            '0', '0',
-            '0 Ω', '0 fF', '0 μm', '0 ps', '0 ps',
-            '0', '0', '0',
-        )
+        """Build the 14 property-panel fields for the current net selection.
+
+        Uses core.rc_summary.summarize_net (the same source as Routing Review)
+        so R/C/τ Elmore match across tabs. τ Naive (R*C) is kept for comparison.
+        """
         if not selected_nets or len(selected_nets) != 1:
-            return ('--',) * 13
+            return ('--',) * 14
 
         net_id = selected_nets[0]
         if net_id not in app_state.nets_data:
-            return (net_id, '--', '--') + zeros_tail
+            return (net_id, '--', '--') + ('0',) * 11
 
         try:
             source, net_name = parse_net_id(net_id)
@@ -520,19 +519,39 @@ def register_callbacks(app: Dash):
         shapes = data['shapes']
         total_polys = sum(len(p) for p in shapes.values())
 
+        # Defaults
         resistance = '0 Ω'
         capacitance = '0 fF'
         length = '0 μm'
-        tau_rc = '0 ps'
+        tau_elmore = '0 ps'
+        tau_naive = '0 ps'
         tpd = '0 ps'
 
+        # R/C/tau via summarize_net (single source-of-truth with Routing Review)
+        if app_state.engine and net_id in app_state.engine.nets:
+            try:
+                from core.rc_summary import summarize_net
+                from core.routing_metrics import coerce_vias, split_metal_via_polygons
+                from app.routing_state import routing_state
+                tech = app_state.config.tech_config.layers
+                polys = app_state.engine.nets[net_id]
+                metals, via_polys = split_metal_via_polygons(polys)
+                vias = coerce_vias(via_polys, tech)
+                thr = routing_state.get_thresholds()
+                summary = summarize_net(net_id, metals, vias, tech, thr, golden_metrics=None)
+                if summary["status"] == "ok":
+                    resistance = f"{summary['r_total_ohm']:.2f} Ω"
+                    capacitance = f"{summary['c_total_ff']:.2f} fF"
+                    tau_elmore = f"{summary['tau_elmore_ps']:.2f} ps"
+                    tau_naive = f"{summary['tau_naive_ps']:.2f} ps"
+            except Exception:
+                pass
+
+        # Length and tpd: still read from legacy net_rc_data (not refactored here)
         if app_state.engine and hasattr(app_state.engine, 'net_rc_data'):
             if net_id in app_state.engine.net_rc_data:
                 rc_data = app_state.engine.net_rc_data[net_id]
-                resistance = f"{rc_data.total_resistance:.2f} Ω"
-                capacitance = f"{rc_data.total_capacitance:.2f} fF"
                 length = f"{rc_data.total_length:.2f} μm"
-                tau_rc = f"{rc_data.tau_rc:.2f} ps"
                 tpd = f"{rc_data.tpd_50:.2f} ps"
 
         critical = '0'
@@ -553,7 +572,7 @@ def register_callbacks(app: Dash):
             net_id, source, net_name,
             str(len(shapes)), str(total_polys),
             resistance, capacitance, length,
-            tau_rc, tpd,
+            tau_elmore, tau_naive, tpd,
             critical, warnings, info,
         )
 
@@ -567,6 +586,7 @@ def register_callbacks(app: Dash):
          Output('prop-capacitance', 'children'),
          Output('prop-length', 'children'),
          Output('prop-tau-rc', 'children'),
+         Output('prop-tau-naive', 'children'),
          Output('prop-tpd', 'children'),
          Output('prop-critical', 'children'),
          Output('prop-warnings', 'children'),

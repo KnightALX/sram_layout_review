@@ -323,6 +323,10 @@ def _create_right_panel():
                     html.Span('0 ps', id='prop-tau-rc', className='prop-value'),
                 ], className='prop-row'),
                 html.Div([
+                    html.Span('tau_naive:', className='prop-label'),
+                    html.Span('0 ps', id='prop-tau-naive', className='prop-value'),
+                ], className='prop-row'),
+                html.Div([
                     html.Span('t_pd(50%):', className='prop-label'),
                     html.Span('0 ps', id='prop-tpd', className='prop-value'),
                 ], className='prop-row'),
