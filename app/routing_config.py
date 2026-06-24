@@ -78,8 +78,7 @@ def _handle_routing_preset_or_thresh(
                 t = _load(preset)
             routing_state.current_preset = preset
             routing_state.thresholds = t
-            routing_state.custom_thresholds = None
-            routing_state.set_frozen_mode(True)
+            routing_state.set_frozen_mode(True)  # also ensures custom_thresholds=None and _is_frozen
             status = f"Loaded preset: {preset}"
             thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
             dis_f = _disabled_list(True, n_fields)
@@ -641,8 +640,9 @@ def register_routing_config_callbacks(app):
         # Commit to routing_state + switch to editable mode (custom active).
         # Always update state and clear badges (Task 5).
         if routing_state.custom_thresholds is None:
+            # centralize read: use get_thresholds() (frozen at this point => returns base preset)
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
-                routing_state.thresholds.to_dict()
+                routing_state.get_thresholds().to_dict()
             )
         for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
             if val is not None:
@@ -706,8 +706,9 @@ def register_routing_config_callbacks(app):
         if trigger == "mode-editable":
             # Always copy current (from preset) to custom if needed (per spec + requirement)
             if routing_state.custom_thresholds is None:
+                # centralize read via get_thresholds() (at switch time, base preset is active)
                 routing_state.custom_thresholds = RoutingThresholds.from_dict(
-                    routing_state.thresholds.to_dict()
+                    routing_state.get_thresholds().to_dict()
                 )
             routing_state.set_frozen_mode(False)
             thr = routing_state.get_thresholds()

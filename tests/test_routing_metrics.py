@@ -264,3 +264,69 @@ def test_low_similarity_no_bypass():
     # soft fail not bypassed, sim fail → reasons contain both
     assert any("h_ratio" in r for r in reasons)
     assert any("similarity" in r for r in reasons)
+
+
+# --- Task 7: RC equality between Properties (legacy engine path) and Routing Review ---
+# Uses the upload/_rebuild path + app_state to simulate what Properties panel sees.
+
+def test_rc_values_match_between_properties_and_routing_review():
+    """RC values (R, C, τ) from legacy Properties (via _rebuild_engine_from_nets + engine.net_rc_data)
+    must match those from routing review default path (compute_for_net with rc_model=None).
+    Uses get_thresholds() for the thresholds passed to routing path.
+    """
+    import sys
+    # ensure path
+    if '.' not in sys.path:
+        sys.path.insert(0, '.')
+
+    import pytest
+
+    from app.callbacks import _rebuild_engine_from_nets
+    from app.routing_state import routing_state
+    from app.state import app_state
+    from config.routing_thresholds import RoutingThresholds
+    from core.data_parsing import import_shape_from_file
+    from core.routing_metrics import compute_for_net, split_metal_via_polygons
+
+    # Clean state
+    app_state.clear_nets()
+    routing_state.reset_review()
+    # reset thresholds/mode to known
+    routing_state.current_preset = "sram_7nm_wl"
+    routing_state.thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    routing_state.custom_thresholds = None
+    routing_state.set_frozen_mode(True)
+
+    # Load a net using same mechanism as upload (import_shape gives polygons + net_id)
+    rec = import_shape_from_file("tests/shapes_test_normal.txt", custom_net_name="RC_MATCH_NET")
+    assert rec is not None
+    net_id = rec["net_id"]
+    polygons = rec["polygons"]
+
+    # Simulate what upload callback does
+    app_state.nets_data[net_id] = {
+        "net_id": net_id,
+        "polygons": polygons,
+        "source": rec.get("source", "_default"),
+        "net_name": rec.get("net_name", "RC_MATCH_NET"),
+    }
+
+    # Upload path: rebuilds engine + calls calculate_net_rc for Properties
+    _rebuild_engine_from_nets()
+    assert app_state.engine is not None
+    assert net_id in app_state.engine.net_rc_data
+    rc_legacy = app_state.engine.net_rc_data[net_id]
+
+    # Routing Review path: same net data -> compute_for_net (rc_model=None default)
+    tech = app_state.config.tech_config.layers
+    thresholds = routing_state.get_thresholds()  # authoritative via public helper
+    metals, vias = split_metal_via_polygons(polygons)
+    m = compute_for_net(net_id, metals, vias, tech, thresholds, golden_metrics=None, rc_model=None)
+
+    # Assert R/C/τ match (as Properties would show vs Review cards/table)
+    assert m["r_total"] == pytest.approx(rc_legacy.total_resistance, rel=1e-12, abs=1e-12)
+    assert m["c_total"] == pytest.approx(rc_legacy.total_capacitance, rel=1e-12, abs=1e-12)
+    assert m["effective_tau_ps"] == pytest.approx(rc_legacy.tau_rc, rel=1e-9, abs=1e-9)
+
+    # cleanup
+    app_state.clear_nets()

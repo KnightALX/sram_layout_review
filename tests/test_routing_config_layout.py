@@ -26,6 +26,7 @@ from app.routing_config import (
 from app.routing_state import RoutingState
 from app.routing_state import routing_state as global_routing_state
 from config.routing_thresholds import RoutingThresholds
+from core.routing_metrics import check_gates
 
 
 def _find_by_id(node, target_id):
@@ -310,4 +311,92 @@ def test_rehydrate_after_tab_switch_simulation():
     assert abs(out[via_idx] - 0.77) < 1e-12
     # And disabled reflects editable
     assert out[14 + 5] is False
+
+
+# --- Task 7 Step 3: frozen vs editable apply persistence test ---
+# Simulates state changes, Apply-like commits, and tab switches (via rehydrate helpers).
+# Uses public APIs (get_thresholds, set_frozen_mode, is_frozen) for the flow where possible.
+# Asserts values shown in inputs (rehydrate outs) + values used for review gates.
+
+def test_frozen_vs_editable_apply_persistence():
+    """Apply + frozen/editable + tab rehydrate must persist the right values.
+    Review code must see the thresholds from get_thresholds() after changes.
+    """
+    _reset_routing_state_to_default()
+    rs = global_routing_state
+
+    # 1. Start in frozen (default)
+    assert rs.is_frozen is True
+    thr_frozen = rs.get_thresholds()
+    orig_tau = thr_frozen.max_tau_ps
+
+    # Tab switch rehydrate in frozen must give disabled + preset vals
+    out = _compute_rehydrate_outputs()
+    assert "btn-primary" in out[0]  # frozen class
+    assert out[14] is True  # first disabled
+    assert abs(out[7 + 4] - orig_tau) < 1e-12  # tau value (index 4 in thresh)
+
+    # 2. Switch to editable via public helper (simulates mode-editable click)
+    rs.set_frozen_mode(False)
+    assert rs.is_frozen is False
+    # get still returns preset (custom not yet created)
+    assert abs(rs.get_thresholds().max_tau_ps - orig_tau) < 1e-12
+
+    # Rehydrate (tab switch) reflects editable + same values
+    out_e = _compute_rehydrate_outputs()
+    assert "btn-primary" in out_e[1]  # editable primary
+    assert out_e[14] is False
+    assert abs(out_e[7 + 4] - orig_tau) < 1e-12
+
+    # 3. Simulate Apply: user changes a value, Apply commits custom + stays editable
+    # (use minimal direct for test setup only; production Apply in config uses similar)
+    if rs.custom_thresholds is None:
+        rs.custom_thresholds = RoutingThresholds.from_dict(rs.get_thresholds().to_dict())
+    new_tau = orig_tau + 5.0
+    new_sim = 95
+    rs.custom_thresholds.max_tau_ps = new_tau
+    rs.custom_thresholds.min_similarity = new_sim
+    # (Apply would also call set_frozen_mode(False) but already is)
+
+    assert rs.is_frozen is False
+    thr_custom = rs.get_thresholds()
+    assert abs(thr_custom.max_tau_ps - new_tau) < 1e-9
+    assert abs(thr_custom.min_similarity - new_sim) < 1e-9
+
+    # 4. Tab switch (rehydrate) after apply must show the applied custom values + editable
+    out_after = _compute_rehydrate_outputs()
+    tau_idx = 7 + 4
+    sim_idx = 7 + 6
+    assert abs(out_after[tau_idx] - new_tau) < 1e-9
+    assert abs(out_after[sim_idx] - new_sim) < 1e-9
+    assert out_after[14] is False  # still editable
+
+    # 5. Values used for review gates must come from get_thresholds() (current custom)
+    # Pick a tau value between tight (orig-1) and preset orig so:
+    #  - fails when using tightened custom
+    #  - passes when frozen back to preset
+    mid_tau = orig_tau - 0.5
+    dummy_metrics = {
+        "net_name": "t",
+        "h_ratio": 0.1, "v_ratio": 0.1,
+        "r_total": 1.0, "c_total": 1.0,
+        "effective_tau_ps": mid_tau,
+        "via_coverage": 0.99, "missing_via_count": 0,
+        "similarity_score": 99.0,
+    }
+    # direct call would use thresholds from state in real _run, here we simulate gate using get
+    rs.custom_thresholds.max_tau_ps = orig_tau - 1.0
+    pass_tight, _ = check_gates(dummy_metrics, rs.get_thresholds(), has_golden=False)
+    assert pass_tight is False  # fails tightened (custom) gate
+    # Switch to frozen: custom is cleared, get returns preset (higher tolerance)
+    rs.set_frozen_mode(True)
+    pass_frozen, _ = check_gates(dummy_metrics, rs.get_thresholds(), has_golden=False)
+    assert pass_frozen is True  # old preset allows the mid_tau
+
+    # rehydrate after frozen switch shows original
+    out_f2 = _compute_rehydrate_outputs()
+    assert abs(out_f2[tau_idx] - orig_tau) < 1e-12  # custom discarded on freeze -> preset orig_tau
+
+    # cleanup
+    _reset_routing_state_to_default()
 
