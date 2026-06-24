@@ -91,6 +91,41 @@ def _handle_routing_preset_or_thresh(
 
     # Manual thresh edit path (no side effect on state)
     current = routing_state.get_thresholds()
+    current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
+
+    # Task 5 Step 3: guard red/invalid + unsaved logic with "user_modified" check
+    # against last-known-good (the authoritative current values from state).
+    # This prevents showing red font or "unsaved" on initial load / re-sync
+    # of a perfectly valid preset. Only treat as a modifying user action (and
+    # run tentative validation that can produce red) when an input value
+    # actually differs from the last good value.
+    user_modified = False
+    for i, (name, *_) in enumerate(THRESHOLD_FIELDS):
+        v = thresh_values[i] if i < len(thresh_values) else None
+        if v is not None:
+            try:
+                if abs(float(v) - float(current_vals[i])) > 1e-9:
+                    user_modified = True
+                    break
+            except Exception:
+                user_modified = True
+                break
+
+    if not user_modified:
+        # Not a real edit — e.g. values just re-populated after preset load or
+        # tab re-hydration. Emit clean state, no unsaved badge, no red error.
+        from dash import no_update as _no_update
+        return tuple([
+            f_cls, e_cls,
+            f"Loaded: {routing_state.current_preset}",
+            "",
+            html.Span("", style={"display": "none"}),
+            "",
+            _no_update,
+        ] + current_vals + dis_list)
+
+    # Real user modification: build tentative from provided values and validate.
+    # Red/invalid styling will now only be shown when the user's change caused failure.
     tentative_dict = current.to_dict()
     for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
         if val is not None:
@@ -150,6 +185,33 @@ def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
     frozen=True -> all disabled; frozen=False -> all enabled.
     """
     return [frozen] * n_fields
+
+
+def _compute_rehydrate_outputs():
+    """Return the full tuple of outputs to re-populate Routing Config controls from state.
+
+    Used by the tab-switch rehydration callback (Task 5). Order matches the large
+    output list used by preset/mode/apply callbacks:
+      [mode-frozen, mode-editable, preset-status, config-status,
+       unsaved-badge, apply-status, preset-value]
+      + 7 thresh values + 7 disabled.
+    Clears transient badges on re-entry for clean re-hydration while restoring
+    authoritative values + mode + disabled from routing_state.
+    """
+    thr = routing_state.get_thresholds()
+    vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
+    frozen = routing_state.is_frozen
+    f_cls, e_cls = _mode_button_classes(frozen)
+    dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
+    # On tab re-activation: reflect current preset/mode/values, clear transient messages.
+    return tuple([
+        f_cls, e_cls,
+        f"Loaded: {routing_state.current_preset}",
+        "",
+        html.Span("", style={"display": "none"}),
+        "",
+        routing_state.current_preset,
+    ] + vals + dis_list)
 
 
 def get_threshold_input_ids() -> List[str]:
@@ -417,7 +479,11 @@ def register_routing_config_callbacks(app):
          Input("nets-meta-store", "data")],
     )
     def _refresh_previews(golden_re, batch_re, tab, _nets_meta):
-        # Only run when this tab is visible (cheap) — otherwise no_update
+        # Only run when this tab is visible (cheap) — otherwise no_update.
+        # Strengthened tab listener pattern (Task 5): guard ensures we only
+        # act for tab-routing-config (or initial None). The heavy re-hydration
+        # of thresh-* values + disabled + mode UI lives in the dedicated
+        # _rehydrate_on_tab callback below.
         if tab not in (None, "tab-routing-config"):
             return no_update, no_update, no_update, no_update
         return (
@@ -426,6 +492,32 @@ def register_routing_config_callbacks(app):
             _loaded_nets_status(),
             "",
         )
+
+    # --- 1b. Tab switch re-hydration (Task 5 Step 1).
+    #         When the user activates (or returns to) the Routing Config tab,
+    #         re-populate all threshold inputs from the *authoritative* state
+    #         (routing_state.get_thresholds()), set correct disabled flags per
+    #         current is_frozen, and restore the mode button classes.
+    #         This fixes "tab switch loses values" / "apply无效" symptoms.
+    @app.callback(
+        [Output("mode-frozen", "className", allow_duplicate=True),
+         Output("mode-editable", "className", allow_duplicate=True),
+         Output("routing-preset-status", "children", allow_duplicate=True),
+         Output("routing-config-status", "children", allow_duplicate=True),
+         Output("thresh-unsaved-badge", "children", allow_duplicate=True),
+         Output("thresh-apply-status", "children", allow_duplicate=True),
+         Output("routing-preset", "value", allow_duplicate=True)]
+        + [Output(f"thresh-{name}", "value", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS]
+        + [Output(f"thresh-{name}", "disabled", allow_duplicate=True) for name, *_ in THRESHOLD_FIELDS],
+        Input("tabs", "value"),
+        prevent_initial_call=True,
+    )
+    def _rehydrate_on_tab(tab):
+        if tab != "tab-routing-config":
+            n_out = 7 + 2 * len(THRESHOLD_FIELDS)
+            return tuple(no_update for _ in range(n_out))
+        # Delegate to pure helper (testable, mirrors the "if tab == ..." shape in the plan).
+        return _compute_rehydrate_outputs()
 
     # --- 2. Quick-fill buttons (each does everything: set regex + run review +
     #         navigate to the Routing Review tab). One click, one result. ---
@@ -521,7 +613,8 @@ def register_routing_config_callbacks(app):
             raise
 
     # --- 5. Apply Thresholds button — validates and commits to routing_state ---
-    # Enhances to set is_frozen=False (editable) on commit (Task 4 step 5).
+    # Always updates state (custom + is_frozen) and clears badges on success (Task 5 Step 2).
+    # Sets is_frozen based on the post-apply mode (editable after committing edits).
     @app.callback(
         [Output("mode-frozen", "className", allow_duplicate=True),
          Output("mode-editable", "className", allow_duplicate=True),
@@ -556,7 +649,8 @@ def register_routing_config_callbacks(app):
                 + safe_values + dis
             )
 
-        # Commit to routing_state + switch to editable mode (custom active)
+        # Commit to routing_state + switch to editable mode (custom active).
+        # Always update state and clear badges (Task 5).
         if routing_state.custom_thresholds is None:
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.thresholds.to_dict()
@@ -565,16 +659,18 @@ def register_routing_config_callbacks(app):
             if val is not None:
                 setattr(routing_state.custom_thresholds, name, val)
 
-        # Per spec: Apply commits and sets appropriate mode (editable)
-        routing_state.set_frozen_mode(False)
+        # Set is_frozen based on the applied mode: after Apply we are in editable (not frozen).
+        post_apply_frozen = False
+        routing_state.set_frozen_mode(post_apply_frozen)
 
         f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
         dis_editable = _disabled_list(routing_state.is_frozen, len(THRESHOLD_FIELDS))
+        # Success path explicitly clears unsaved badge and sets clean apply status.
         return (
             [f_cls, e_cls,
              html.Span("✓ Thresholds applied successfully.",
                        style={"fontSize": "11px", "color": "#27AE60", "fontWeight": "600"}),
-             html.Span("", style={"display": "none"}),
+             html.Span("", style={"display": "none"}),  # clear unsaved badge
              f"Thresholds applied (preset: {routing_state.current_preset})"]
             + list(thresh_values) + dis_editable
         )

@@ -1,4 +1,4 @@
-"""Tests for routing config tab layout generation + toggle behavior (Task 4 quality fixes).
+"""Tests for routing config tab layout generation + toggle behavior (Task 4/5).
 
 Covers:
 - initial disabled + button classes
@@ -6,6 +6,8 @@ Covers:
 - editable preset prevent (via mocked logic invocation)
 - Apply side effects
 - interactions with shared update paths (thresh edits, status)
+- tab switch re-hydration (Task 5): _compute_rehydrate_outputs + state roundtrip
+- red/invalid guard (user_modified vs last-known-good)
 """
 import sys
 
@@ -14,6 +16,7 @@ sys.path.insert(0, '.')
 from dash.exceptions import PreventUpdate
 
 from app.routing_config import (
+    _compute_rehydrate_outputs,
     _disabled_list,
     _handle_routing_preset_or_thresh,
     _mode_button_classes,
@@ -211,4 +214,100 @@ def test_handle_frozen_preset_load_side_effect():
     assert global_routing_state.is_frozen is True
     # state mutated by the load path
     assert global_routing_state.current_preset == "sram_7nm_wl"
+
+
+# --- Task 5: tab re-hydration and red-guard tests ---
+
+def test_compute_rehydrate_outputs_matches_state_frozen():
+    """Rehydrate helper must return values + disabled=True + frozen-primary classes when frozen."""
+    _reset_routing_state_to_default()
+    global_routing_state.set_frozen_mode(True)
+    # Make sure a known preset value is present
+    thr = global_routing_state.get_thresholds()
+    out = _compute_rehydrate_outputs()
+    # Indices (0-based) per helper contract:
+    # 0:frozen-cls, 1:editable-cls, 2:preset-status, 3:config-status,
+    # 4:unsaved-badge, 5:apply-status, 6:preset-value,
+    # 7..13: 7 values, 14..20: 7 disabled
+    assert "btn-primary" in out[0]
+    assert "btn-secondary" in out[1]
+    assert out[6] == global_routing_state.current_preset
+    # values start at 7
+    assert abs(out[7] - thr.max_h_ratio) < 1e-12  # first field
+    # disabled start at 14
+    assert out[14] is True  # first disabled should be True (frozen)
+    assert out[20] is True  # last disabled True
+
+
+def test_compute_rehydrate_outputs_matches_state_editable_custom():
+    """After entering editable + custom value, rehydrate must surface the edited values + disabled=False."""
+    _reset_routing_state_to_default()
+    # Simulate user entering editable and applying a different value
+    if global_routing_state.custom_thresholds is None:
+        global_routing_state.custom_thresholds = RoutingThresholds.from_dict(
+            global_routing_state.thresholds.to_dict()
+        )
+    global_routing_state.custom_thresholds.max_tau_ps = 42.0
+    global_routing_state.set_frozen_mode(False)
+
+    out = _compute_rehydrate_outputs()
+    thr = global_routing_state.get_thresholds()
+    assert global_routing_state.is_frozen is False
+    # mode buttons: frozen secondary, editable primary
+    assert "btn-secondary" in out[0]
+    assert "btn-primary" in out[1]
+    # locate max_tau_ps index: THRESHOLD_FIELDS order is fixed
+    # fields: 0 max_h,1 max_v,2 r,3 c,4 tau,5 via,6 sim
+    tau_idx = 7 + 4
+    assert abs(out[tau_idx] - 42.0) < 1e-9
+    assert abs(thr.max_tau_ps - 42.0) < 1e-9
+    dis_start = 14
+    assert out[dis_start + 4] is False  # tau disabled == False (editable)
+    # transient badges should be cleared by rehydrate
+    assert "unsaved" not in str(out[4]).lower()
+    assert str(out[5]) == "" or "display" in str(out[5])  # empty or hidden span repr
+
+
+def test_handle_logic_no_red_or_unsaved_when_values_match_last_good():
+    """Non-modifying thresh input fire (values == current) must NOT emit unsaved badge or red Invalid."""
+    _reset_routing_state_to_default()
+    global_routing_state.set_frozen_mode(True)
+    curr = global_routing_state.get_thresholds()
+
+    # Pass values that match exactly (as would happen on re-populate after load or tab switch)
+    # Pull the canonical field order
+    from app.routing_config import THRESHOLD_FIELDS as _TF
+    auth_vals = [getattr(curr, name) for name, *_ in _TF]
+
+    out = _handle_routing_preset_or_thresh(None, tuple(auth_vals), "thresh-max_h_ratio")
+
+    # unsaved badge is index 4; apply guidance is index 5
+    badge = str(out[4])
+    guidance = str(out[5])
+    status = str(out[3])
+    # Must not contain the unsaved indicator or red Invalid text
+    assert "unsaved" not in badge.lower()
+    assert "invalid" not in status.lower()
+    assert "invalid" not in guidance.lower()
+    assert "#C0392B" not in str(out)  # red color only appears on real failure path
+
+
+def test_rehydrate_after_tab_switch_simulation():
+    """Simulate tab switch re-hydration after state mutation (as done by _rehydrate_on_tab)."""
+    _reset_routing_state_to_default()
+    # User switches mode + edits (via apply side-effect simulation)
+    global_routing_state.set_frozen_mode(False)
+    if global_routing_state.custom_thresholds is None:
+        global_routing_state.custom_thresholds = RoutingThresholds.from_dict(
+            global_routing_state.thresholds.to_dict()
+        )
+    global_routing_state.custom_thresholds.min_via_coverage = 0.77
+
+    # "Tab switch" = calling the rehydrate computer directly
+    out = _compute_rehydrate_outputs()
+    # Verify authoritative value is restored to UI
+    via_idx = 7 + 5  # 5th custom field after the 7 fixed prefix
+    assert abs(out[via_idx] - 0.77) < 1e-12
+    # And disabled reflects editable
+    assert out[14 + 5] is False
 
