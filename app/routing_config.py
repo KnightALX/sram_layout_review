@@ -201,6 +201,70 @@ def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], 
     return tentative, None
 
 
+def _render_state(thresh_input_values: list) -> tuple:
+    """Project routing_state to 21 UI outputs.
+
+    Output tuple order (matches the single callback's Output list):
+      [0]  mode-frozen className
+      [1]  mode-editable className
+      [2]  routing-preset-status children
+      [3]  routing-config-status children
+      [4]  thresh-unsaved-badge children
+      [5]  thresh-apply-status children
+      [6]  routing-preset value
+      [7..13] 7 thresh-{name} values
+      [14..20] 7 thresh-{name} disabled flags
+
+    `thresh_input_values` is the list of 7 values currently in the inputs;
+    used to detect unsaved changes.
+    """
+    thr = routing_state.get_thresholds()
+    vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
+    frozen = routing_state.is_frozen
+    f_cls, e_cls = _mode_button_classes(frozen)
+    dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
+
+    # detect unsaved changes (only meaningful in editable mode)
+    has_unsaved = (
+        not frozen
+        and list(thresh_input_values) != vals
+    )
+
+    source = routing_state.get_threshold_source()
+    preset_status = html.Span(source, style={"color": "#888", "fontSize": "11px"})
+
+    config_status_text = routing_state.last_error or ""
+    if config_status_text:
+        config_status = html.Span(
+            f"Error: {config_status_text}",
+            style={"fontSize": "11px", "color": "#C0392B"},
+        )
+    else:
+        config_status = ""
+
+    if has_unsaved:
+        unsaved_badge = html.Span(
+            "Unsaved Changes",
+            style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"},
+        )
+        apply_status = html.Span(
+            "Thresholds modified - click Apply to save.",
+            style={"fontSize": "11px", "color": "#E67E22"},
+        )
+    else:
+        unsaved_badge = html.Span("", style={"display": "none"})
+        apply_status = ""
+
+    return tuple([
+        f_cls, e_cls,
+        preset_status,
+        config_status,
+        unsaved_badge,
+        apply_status,
+        routing_state.current_preset,
+    ] + vals + dis_list)
+
+
 def _compute_rehydrate_outputs():
     """Return the full tuple of outputs to re-populate Routing Config controls from state.
 
