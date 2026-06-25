@@ -602,9 +602,9 @@ def _run_routing_review():
     tech_layers = app_state.config.tech_config.layers
     thresholds = routing_state.get_thresholds()
     # Force legacy RC path (rc_model=None) for default so that R/C/tau are
-    # identical to Layout View Properties panel. Only use custom_rc_model
-    # when the user has explicitly set one (via RC model config).
-    # This ensures default path in _run_routing_review matches legacy engine.
+    # identical to Layout View Properties panel (Task 2 unification).
+    # Only use custom_rc_model when the user has explicitly set one.
+    # Pass None unless custom is explicitly active.
     rc_model_to_use = routing_state.custom_rc_model if routing_state.custom_rc_model else None
 
     # Compute golden first (if present)

@@ -207,7 +207,8 @@ def compute_for_net(
             R/C/tau are computed using the user's process / EDA parameters
             (from the RC Prediction Tab / custom model).  When None (the
             default), the legacy `tech_layers` + calculate_net_rc + totals-based
-            lumped τ is used — produces R/C/τ identical to Layout View Properties.
+            lumped τ is used — unifies default RC path so R/C/τ match
+            Layout View Properties panel (see Task 2).
 
     Returns:
         Dict matching the 6-metric contract (with both `total_length` and
