@@ -1,7 +1,7 @@
 """Routing-focused Layout Review tab.
 
 Replaces `_create_review_content()` from `app/layout.py`.
-Shows the 6 metric cards + sortable similarity table + per-net directional viz.
+Shows the metric cards (incl. Eff. C) + sortable table (with C column + /thresh) + per-net directional viz + source banner.
 
 Task 7 hygiene note: This file exclusively uses the public RoutingState API
 (get_thresholds(), is_frozen property, get_threshold_source()) for all
@@ -91,11 +91,12 @@ def _build_threshold_source() -> html.Div:
 
 
 def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
-    """Build 6 summary cards showing data ranges (min–max) and pass/fail count.
+    """Build summary metric cards showing data ranges (min–max) and pass/fail count.
 
-    Cards: H/V Ratio, Missing Via, Eff. R, Eff. τ, Similarity, Pass/Fail.
-    The first 5 show the [min, max] range across all batch nets.
-    The 6th shows pass count and total (e.g. "5 / 8").
+    Cards: H/V Ratio, Missing Via, Eff. R, Eff. C (fF), Eff. τ, Similarity, Pass/Fail.
+    The first 6 show the [min, max] range across all batch nets (with current/threshold
+    appended for thresholded metrics).
+    The last shows pass count and total (e.g. "5 / 8").
 
     Nets with `status="no_data"` are excluded from min/max aggregation
     (so a "0Ω, 0fF" ghost doesn't drag the ranges to zero), but are still
@@ -104,7 +105,7 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
     """
     cards: List[html.Div] = []
     if not results:
-        # Empty state — show dashes for the first 5 cards
+        # Empty state — show dashes for the first 6 cards (before Pass/Fail)
         for _key, label, _unit in METRIC_CARD_IDS[:-1]:
             cards.append(_make_card(label, "—", "no review yet"))
     else:
@@ -129,8 +130,8 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
             sim_lo, sim_hi = _minmax(lambda r: r["similarity_score"])
             thresholds = routing_state.get_thresholds()
             cards = [
-                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%"),
-                _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max"),
+                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"H≤{thresholds.max_h_ratio*100:.0f}% V≤{thresholds.max_v_ratio*100:.0f}%"),
+                _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max", threshold="0"),
                 _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max", threshold=f"{thresholds.max_r_ohm:.1f}Ω"),
                 _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF",             "min–max", threshold=f"{thresholds.max_c_ff:.1f}fF"),
                 _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps",         "min–max", threshold=f"{thresholds.max_tau_ps:.1f}ps"),
