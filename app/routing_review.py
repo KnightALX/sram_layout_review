@@ -601,9 +601,10 @@ def _run_routing_review():
 
     tech_layers = app_state.config.tech_config.layers
     thresholds = routing_state.get_thresholds()
-    # Default RC path must match Layout View Properties:
-    # use legacy tech_layers + calculate_net_rc + lumped tau (rc_model=None).
-    # Only pass an RCModelConfig when the user has explicitly set a custom model.
+    # Force legacy RC path (rc_model=None) for default so that R/C/tau are
+    # identical to Layout View Properties panel. Only use custom_rc_model
+    # when the user has explicitly set one (via RC model config).
+    # This ensures default path in _run_routing_review matches legacy engine.
     rc_model_to_use = routing_state.custom_rc_model if routing_state.custom_rc_model else None
 
     # Compute golden first (if present)
