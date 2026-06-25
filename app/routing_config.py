@@ -77,11 +77,10 @@ def _handle_routing_preset_or_thresh(
                 from config.preset_loader import load_preset_yaml as _load  # local alias
                 t = _load(preset)
             routing_state.current_preset = preset
-            # Base preset load (frozen path): direct set to the backing preset field is the
-            # intended design for the "strictly follow preset" mode (no custom). Value reads
-            # always go through get_thresholds() which respects is_frozen.
+            # Base preset load (frozen path): direct set to the backing preset field.
+            # Value reads always go through get_thresholds() which is authoritative on is_frozen.
             routing_state.thresholds = t
-            routing_state.set_frozen_mode(True)  # also ensures custom_thresholds=None and _is_frozen
+            routing_state.set_frozen_mode(True)  # ensures is_frozen; custom draft preserved by set_frozen_mode but ignored by get while frozen
             status = f"Loaded preset: {preset}"
             thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
             dis_f = _disabled_list(True, n_fields)
@@ -289,7 +288,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         if routing_state.is_frozen:
             routing_state.current_preset = new_preset
             routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
-            routing_state.custom_thresholds = None
+            routing_state.custom_thresholds = None  # preset switch in frozen discards prior draft
             routing_state.last_error = None
             routing_state.last_status = ""
         # else: editable mode blocks preset change; render_state will
@@ -297,7 +296,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         return
 
     if trigger_id == "mode-frozen.n_clicks":
-        routing_state.set_frozen_mode(True)
+        routing_state.set_frozen_mode(True)  # preserves any custom draft (get_thresholds respects frozen)
         routing_state.last_error = None
         routing_state.last_status = ""
         return

@@ -23,8 +23,10 @@ class RoutingState:
     # Custom overrides (None means use preset)
     custom_thresholds: Optional[RoutingThresholds] = None
 
-    # Explicit frozen mode (default True). When True, callers use preset.
-    # set_frozen_mode(True) also clears custom_thresholds.
+    # Explicit frozen mode (default True). When True, get_thresholds() returns
+    # the preset (authoritative); custom_thresholds may still hold a preserved
+    # "draft" for restore on next Editable toggle. set_frozen_mode(True) does
+    # NOT clear custom_thresholds (draft preservation).
     is_frozen: bool = True
 
     # Golden + batch (regex strings; resolved against app_state.nets_data)
@@ -54,23 +56,36 @@ class RoutingState:
     last_status: str = ""
 
     def __post_init__(self):
-        """Enforce defaults: frozen mode starts with no custom overrides."""
+        """Enforce defaults: initial frozen mode starts with no custom overrides.
+        (Later set_frozen_mode(True) preserves any existing custom draft.)
+        """
         if self.is_frozen:
             self.custom_thresholds = None
 
     def get_thresholds(self) -> RoutingThresholds:
+        """Return active thresholds. Frozen mode is authoritative: always the
+        preset backing `thresholds`, ignoring any custom draft. In editable
+        mode, prefer custom if present, else preset.
+        """
+        if self.is_frozen:
+            return self.thresholds
         return self.custom_thresholds or self.thresholds
 
     def set_frozen_mode(self, frozen: bool):
+        """Set frozen/locked mode flag.
+
+        Does NOT clear custom_thresholds; the custom object (if any) is
+        preserved as a draft. Callers must use get_thresholds() which gates
+        on is_frozen.
+        """
         self.is_frozen = frozen
-        if frozen:
-            self.custom_thresholds = None
+        # Deliberately do not clear custom_thresholds here (preserve draft).
 
     def set_custom(self, thresholds: "RoutingThresholds"):
         """Adopt a custom thresholds object and switch to editable mode.
 
         Replaces the previous custom_thresholds (if any). The state is now
-        editable; get_thresholds() will return this object.
+        editable; get_thresholds() will return this object (unless later frozen).
         """
         self.custom_thresholds = thresholds
         self.is_frozen = False
