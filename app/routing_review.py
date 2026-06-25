@@ -130,7 +130,7 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
             sim_lo, sim_hi = _minmax(lambda r: r["similarity_score"])
             thresholds = routing_state.get_thresholds()
             cards = [
-                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"H≤{thresholds.max_h_ratio*100:.0f}% V≤{thresholds.max_v_ratio*100:.0f}%"),
+                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"{thresholds.max_h_ratio*100:.0f}/{thresholds.max_v_ratio*100:.0f}%"),
                 _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max", threshold="0"),
                 _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max", threshold=f"{thresholds.max_r_ohm:.1f}Ω"),
                 _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF",             "min–max", threshold=f"{thresholds.max_c_ff:.1f}fF"),
