@@ -124,17 +124,14 @@ def _handle_routing_preset_or_thresh(
             _no_update,
         ] + current_vals + dis_list)
 
-    # Real user modification (Task 6): show unsaved cues ONLY.
-    # Do NOT perform from_dict + validate() + red revert on every keystroke.
-    # Intermediate states during typing (None, '1.', partials) must never cause
-    # revert of the input. Browser-native invalid (red) from min/max is also
-    # eliminated by using 0.0/1.0 in THRESHOLD_FIELDS.
-    # Full validation + possible revert happens exclusively in the Apply button
-    # handler (or when truly out-of-range after user commits via Apply).
+    # Real user modification path (Task 6 cleanup): show unsaved cues ONLY.
+    # Do NOT revert value on keystroke. Intermediate/partial input kept via
+    # no_update. Full validation only on Apply (see _validate_apply + main cb).
+    # Browser-native red avoided by wide min/max in THRESHOLD_FIELDS (updated in Step 3).
     dis_editable = _disabled_list(False, n_fields)
     from dash import no_update as _no_update
-    # Return no_update for the 7 thresh value outputs so the live <input type=number>
-    # state in the browser is not overwritten or reverted on each keystroke.
+    # Return no_update for the 7 thresh value outputs so live typing is not
+    # overwritten (main production callback does equivalent suppression now).
     thresh_value_slots = [_no_update] * n_fields
     return tuple([
         f_cls, e_cls,
@@ -150,12 +147,16 @@ def _handle_routing_preset_or_thresh(
 THRESHOLD_FIELDS = [
     ("max_h_ratio", "Max H Ratio (WL gate)", "0.0", "1.0", "0.01"),
     ("max_v_ratio", "Max V Ratio (IO gate)", "0.0", "1.0", "0.01"),
-    ("max_r_ohm", "Max Total R (Ω)", "0.1", "10000", "0.1"),
-    ("max_c_ff", "Max Total C (fF)", "0.1", "100000", "1"),
-    ("max_tau_ps", "Max Effective τ (ps)", "0.01", "1000", "0.1"),
+    ("max_r_ohm", "Max Total R (Ω)", "0", "10000", "0.1"),
+    ("max_c_ff", "Max Total C (fF)", "0", "100000", "1"),
+    ("max_tau_ps", "Max Effective τ (ps)", "0", "1000", "0.1"),
     ("min_via_coverage", "Min Via Coverage", "0.0", "1.0", "0.01"),
     ("min_similarity", "Min Golden Similarity", "0", "100", "1"),
 ]
+# Task 6 Step 3: mins for R/C/tau loosened to "0" (from "0.1"/"0.01") so that
+# browser-native :invalid styling (red) is not triggered for near-zero or
+# intermediate positive values during live typing. Real >0 enforcement still
+# happens in RoutingThresholds.validate() on Apply only.
 
 
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
@@ -187,12 +188,9 @@ def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], 
     A `None` value in thresh_values means "use the current state value" (the
     input was empty). It does NOT mean invalid.
 
-    Task 5 Step 3: Guard with user_modified check against last-known-good
-    (current authoritative values). Only treat a failure as "red/invalid"
-    when the input value(s) themselves differ from the last known good and
-    cause the validation failure. On initial load / re-hydration / Apply of
-    an unchanged valid preset, do not produce an error (prevents spurious
-    red styling).
+    Task 5 Step 3 + Task 6: Guard with user_modified check against last-known-good.
+    Full red/invalid only surfaces for *real differing* bad values on Apply.
+    Live keystrokes never call this (no revert); only Apply path does.
     """
     current = routing_state.get_thresholds()
     current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
@@ -267,9 +265,9 @@ def _render_state(thresh_input_values: list) -> tuple:
     dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
 
     # detect unsaved changes (only meaningful in editable mode)
-    # Task 5 Step 3: tolerant check against last known good to avoid
-    # spurious "unsaved" (orange) / perceived red on re-hydration or
-    # initial load of valid values (float formatting etc.).
+    # Task 5/6: tolerant diff check vs last-known-good. Note: during live
+    # keystroke the caller suppresses value outputs, but diff detection
+    # (using passed thresh_input_values) still correctly decides badge/status.
     def _vals_differ(a, b):
         try:
             return abs(float(a) - float(b)) > 1e-9
@@ -819,7 +817,7 @@ def register_routing_config_callbacks(app):
         # and State (for Apply action). Since Dash passes them in declaration
         # order, the LAST 7 args (after the 5 head inputs) are the State copies.
         thresh_state = thresh_inputs_and_state[-len(THRESHOLD_FIELDS):]
-        thresh_inputs = thresh_inputs_and_state[:len(THRESHOLD_FIELDS)]
+        # (thresh_inputs slice not needed; values for typing path come via State+trigger)
 
         if not _ctx.triggered:
             # Initial render: dispatch_action is a no-op, just render.
@@ -845,4 +843,20 @@ def register_routing_config_callbacks(app):
         _dispatch_action(trigger_id, trigger_value, tuple(thresh_state))
 
         # Project state to UI
-        return _render_state(list(thresh_state))
+        rendered = _render_state(list(thresh_state))
+
+        # Task 6 Step 2: Remove aggressive revert on every keystroke for valid ranges.
+        # When the user is typing directly in a thresh input, return no_update for the
+        # 7 value slots. This lets the browser <input> retain the user's in-progress
+        # text (including valid edits and intermediate states like '0.' or '12').
+        # Previously _render_state always emitted authoritative vals, forcing revert.
+        # Full validate + possible error (red) or commit only happens on Apply.
+        # (Unsaved badge and other UI still update using the incoming thresh_state.)
+        if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
+            from dash import no_update as _no_update
+            outs = list(rendered)
+            n = len(THRESHOLD_FIELDS)
+            for i in range(n):
+                outs[7 + i] = _no_update
+            return tuple(outs)
+        return rendered

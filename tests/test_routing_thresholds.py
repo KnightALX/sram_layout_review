@@ -66,3 +66,9 @@ def test_all_builtin_and_yaml_presets_pass_validate():
             t2 = RoutingThresholds.for_preset(name)
             assert abs(t.max_h_ratio - t2.max_h_ratio) < 1e-12
             assert abs(t.max_v_ratio - t2.max_v_ratio) < 1e-12
+
+    # TDD for Task 6 Step 1: also validate raw dicts (simulates what "run validate on load" will enforce for builtins at import time)
+    # If any builtin dict would fail validate, this (and on-load guard) catches it.
+    for name, d in _BUILTIN_PRESETS.items():
+        t = RoutingThresholds.from_dict(d)
+        t.validate()

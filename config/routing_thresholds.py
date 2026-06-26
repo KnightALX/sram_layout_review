@@ -113,3 +113,12 @@ class RoutingThresholds:
     def list_presets(cls) -> List[str]:
         """List all built-in preset names."""
         return list(_BUILTIN_PRESETS.keys())
+
+
+# Task 6 Step 1: run validate on load (import time) for every _BUILTIN_PRESET.
+# Guarantees no preset can be loaded that would fail .validate() (range or h+v>=1).
+# This eliminates false red/invalid indicators on UI load of defaults or yamls
+# (yamls get validated via load_preset_yaml path).
+# Uses for_preset() which does from_dict + validate().
+for _pn in list(_BUILTIN_PRESETS.keys()):
+    RoutingThresholds.for_preset(_pn)
