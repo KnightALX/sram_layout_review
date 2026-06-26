@@ -1,9 +1,9 @@
-# Generic analog layout — balanced
+# Generic analog preset — balanced H/V
 net_class: analog
-max_h_ratio: 0.60
-max_v_ratio: 0.60
-max_r_ohm: 200.0
-max_c_ff: 1000.0
-max_tau_ps: 25.0
-min_via_coverage: 0.70
-min_similarity: 70.0
+h_ratio:    {low: 0.0, high: 0.60}
+v_ratio:    {low: 0.0, high: 0.60}
+r_ohm:      {low: 0.0, high: 200.0}
+c_ff:       {low: 0.0, high: 1000.0}
+tau_ps:     {low: 0.0, high: 25.0}
+via_coverage: {low: 0.70, high: 1.0}
+similarity: {low: 70.0, high: 100.0}

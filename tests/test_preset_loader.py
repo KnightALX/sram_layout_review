@@ -65,3 +65,17 @@ def test_load_preset_yaml_with_nested_low_high(tmp_path):
     t2 = load_preset_from_file(str(yaml_path))
     assert t2.h_ratio.low == 0.0
     assert t2.similarity.high == 100.0
+
+
+def test_load_all_yaml_presets_use_new_format():
+    """All YAML presets load via from_dict with the new low/high format and pass validate()."""
+    from config.preset_loader import list_yaml_presets, load_preset_yaml
+    from pathlib import Path
+    from config.routing_thresholds import RoutingThresholds
+    yaml_dir = Path(__file__).parent.parent / "config" / "presets"
+    names = list_yaml_presets(presets_dir=yaml_dir) if False else list_yaml_presets()
+    assert len(names) >= 3
+    for name in names:
+        t = load_preset_yaml(name)
+        assert isinstance(t, RoutingThresholds)
+        t.validate()  # must not raise

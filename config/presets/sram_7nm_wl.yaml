@@ -1,10 +1,10 @@
 # 7nm FinFET SRAM — Wordline-dominant preset
 # Use for: WL signal nets (expect H-dominant routing)
 net_class: wl
-max_h_ratio: 0.15   # WL: H length ≤ 15% of total (most should be V to reach cells)
-max_v_ratio: 1.0    # WL: V length allowed up to 100% (fully V-dominant routing)
-max_r_ohm: 100.0
-max_c_ff: 500.0
-max_tau_ps: 12.5
-min_via_coverage: 0.85
-min_similarity: 80.0
+h_ratio:    {low: 0.0, high: 0.15}    # H length ≤ 15%
+v_ratio:    {low: 0.0, high: 1.0}     # V length allowed up to 100%
+r_ohm:      {low: 0.0, high: 100.0}
+c_ff:       {low: 0.0, high: 500.0}
+tau_ps:     {low: 0.0, high: 12.5}
+via_coverage: {low: 0.85, high: 1.0}
+similarity: {low: 80.0, high: 100.0}
