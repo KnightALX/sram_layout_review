@@ -201,7 +201,7 @@ python3 layout_review_app.py 8050
 1. **Layout View** → 上传 shape 文件或 YAML 批量配置 → net 选择器显示已加载 net
 2. **Routing Config** →
    - 选 preset（默认 `sram_7nm_wl`）
-   - 调整 7 项 threshold（max_h_ratio / max_v_ratio / max_r_ohm / max_c_ff / max_tau_ps / min_via_coverage / min_similarity）
+   - 调整 7 项 threshold（h_ratio / v_ratio / r_ohm / c_ff / tau_ps / via_coverage / similarity）
    - 点 **Use first net as golden** 一键填 golden regex
    - 点 **Use all loaded nets (batch)** 一键填 batch regex
    - 点 **Run Routing Review**（或上一步两个按钮任一会自动 run）
@@ -217,15 +217,17 @@ python3 layout_review_app.py 8050
 
 ### 6 指标定义
 
-| 指标 | 计算 | 阈值 (sram_7nm_wl) |
-|------|------|--------------------|
-| H Ratio | 水平长度 / 总长 | ≤ 0.15 |
-| V Ratio | 垂直长度 / 总长 | ≤ 1.00 |
-| R Total | Σ 金属层电阻 (Ω) | ≤ 100 |
-| C Total | Σ 寄生电容 (fF) | ≤ 500 |
-| τ (ps) | R × C（1 Ω·fF = 1 ps） | ≤ 12.5 |
-| Via Cov | 已布通孔 / 应有通孔 | ≥ 0.85 |
-| Similarity | 与 golden 8 维特征相似度 | ≥ 80 |
+> **RoutingThresholds fields**: All 7 metrics are `Range` objects with `low` and `high` fields. A measurement value passes iff `low <= value <= high`. The aggregate pass/fail for a net is computed in `core.routing_metrics.check_gates`.
+
+| 指标 | 计算 | 阈值 Range (sram_7nm_wl) |
+|------|------|--------------------------|
+| H Ratio | 水平长度 / 总长 | `h_ratio = [0.0, 0.15]` |
+| V Ratio | 垂直长度 / 总长 | `v_ratio = [0.0, 1.00]` |
+| R Total | Σ 金属层电阻 (Ω) | `r_ohm = [0, 100]` |
+| C Total | Σ 寄生电容 (fF) | `c_ff = [0, 500]` |
+| τ (ps) | R × C（1 Ω·fF = 1 ps） | `tau_ps = [0, 12.5]` |
+| Via Cov | 已布通孔 / 应有通孔 | `via_coverage = [0.85, 1.0]` |
+| Similarity | 与 golden 8 维特征相似度 | `similarity = [80, 100]` |
 
 ### Gate 逻辑：HARD / SOFT / SIMILARITY 三类
 
@@ -234,14 +236,14 @@ python3 layout_review_app.py 8050
 | 类别 | 包含 | 是否可被 golden 相似度绕过 |
 |------|------|---------------------------|
 | **HARD** | missing_via, R, C, τ | ❌ 永远不可 |
-| **SOFT** | h_ratio, v_ratio, via_coverage | ✅ 当 `has_golden=True` 且 `similarity ≥ min_similarity` |
+| **SOFT** | h_ratio, v_ratio, via_coverage | ✅ 当 `has_golden=True` 且 `similarity ≥ similarity.low` |
 | **SIMILARITY** | similarity_score | ❌ 永远不可 |
 
 **Pass 规则**：
 
 ```
 PASS = NOT (HARD_fail OR SIMILARITY_fail) AND
-       NOT (SOFT_fail AND NOT (has_golden AND similarity ≥ min_similarity))
+       NOT (SOFT_fail AND NOT (has_golden AND similarity ≥ similarity.low))
 ```
 
 举例：horizontal-only golden + horizontal-only batch net → 软 h_ratio 违例被相似度绕过 → PASS；但 R 超过 100Ω → HARD 违例 → 仍然 FAIL。
@@ -250,8 +252,8 @@ PASS = NOT (HARD_fail OR SIMILARITY_fail) AND
 
 `config/presets/` 下 3 个 YAML 预设，可在线编辑或本地修改：
 
-| Preset | 用途 | max_h | max_v | min_sim |
-|--------|------|-------|-------|---------|
+| Preset | 用途 | h_ratio.high | v_ratio.high | similarity.low |
+|--------|------|--------------|--------------|----------------|
 | `sram_7nm_wl` | 7nm 字线（V-dominant 走线） | 0.15 | 1.00 | 80 |
 | `sram_5nm_io_bl` | 5nm IO/位线（H-dominant） | 1.00 | 0.10 | 80 |
 | `analog_default` | 通用模拟（均衡） | 0.60 | 0.60 | 70 |

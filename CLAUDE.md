@@ -63,7 +63,7 @@ python tests/run_tests.py
 | `rules/` | Plugin rule system — **wired** into `review_engine._execute_check_rule` via `create_rule()`. |
 | `core/routing_metrics.py` | The 6-metric aggregator actually used by the Routing Review tab. Calls `core.directional_analyzer`, `core.via_coverage`, `core.rc_calculator.compute_net_metrics_with_tau`, and `core.golden_similarity`. |
 | `core/rc_calculator.py`, `directional_analyzer.py`, `via_coverage.py`, `golden_similarity.py`, `effective_tau.py`, `matching_analyzer.py`, `data_parsing.py`, `visualization.py`, `path_analysis.py`, `report_visualization.py` | Individual analyzers. |
-| `config/routing_thresholds.py` | `RoutingThresholds` dataclass + 4 built-in presets (`sram_7nm_wl`, `sram_5nm_io_bl`, `analog_default`, `power_relaxed`). `validate()` enforces `max_h_ratio + max_v_ratio ≥ 1.0`. |
+| `config/routing_thresholds.py` | `RoutingThresholds` dataclass + 4 built-in presets (`sram_7nm_wl`, `sram_5nm_io_bl`, `analog_default`, `power_relaxed`). All 7 metrics are `Range` objects with `low` and `high` fields. A measurement value passes iff `low <= value <= high`. The aggregate pass/fail for a net is computed in `core.routing_metrics.check_gates`. `validate()` enforces `h_ratio.high + v_ratio.high ≥ 1.0`. |
 | `config/preset_loader.py` | YAML load/save for `RoutingThresholds`. Reads from `config/presets/*.yaml`. |
 | `config/presets/*.yaml` | Three user-editable preset files (sram_5nm_io_bl, sram_7nm_wl, analog_default). |
 | `app/state.py` | `AppState` singleton — nets_data, engine, config, zoom/view state. Used by the legacy callbacks and by `app/routing_state` (which reads `app_state.nets_data` for regex resolution). |
