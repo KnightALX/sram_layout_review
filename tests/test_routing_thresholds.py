@@ -72,3 +72,79 @@ def test_all_builtin_and_yaml_presets_pass_validate():
     for name, d in _BUILTIN_PRESETS.items():
         t = RoutingThresholds.from_dict(d)
         t.validate()
+
+
+# ---------------------------------------------------------------------------
+# Tests for the new range-based RoutingThresholds.
+# ---------------------------------------------------------------------------
+"""Tests for the new range-based RoutingThresholds."""
+import sys
+sys.path.insert(0, '.')
+
+import pytest
+from config.routing_thresholds import Range, RoutingThresholds
+
+
+def test_thresholds_default_uses_range():
+    """Default thresholds have Range fields with sensible low/high."""
+    t = RoutingThresholds()
+    assert isinstance(t.h_ratio, Range)
+    assert t.h_ratio.low == 0.0
+    assert t.h_ratio.high == 0.15
+    assert isinstance(t.r_ohm, Range)
+    assert t.r_ohm.high == 100.0
+
+
+def test_thresholds_validate_ok():
+    t = RoutingThresholds(
+        h_ratio=Range(0.0, 0.15),
+        v_ratio=Range(0.0, 1.0),
+        r_ohm=Range(0.0, 100.0),
+        c_ff=Range(0.0, 500.0),
+        tau_ps=Range(0.0, 12.5),
+        via_coverage=Range(0.85, 1.0),
+        similarity=Range(80.0, 100.0),
+    )
+    t.validate()  # should not raise
+
+
+def test_thresholds_validate_h_plus_v_too_small():
+    t = RoutingThresholds(
+        h_ratio=Range(0.0, 0.3),
+        v_ratio=Range(0.0, 0.3),  # 0.3 + 0.3 = 0.6 < 1.0
+    )
+    with pytest.raises(ValueError, match="h_ratio.*v_ratio|sum|1.0"):
+        t.validate()
+
+
+def test_thresholds_validate_zero_r_high():
+    t = RoutingThresholds(r_ohm=Range(0.0, 0.0))
+    with pytest.raises(ValueError, match="r_ohm.*positive"):
+        t.validate()
+
+
+def test_thresholds_from_dict_nested():
+    d = {
+        "net_class": "wl",
+        "h_ratio": {"low": 0.0, "high": 0.2},
+        "v_ratio": {"low": 0.0, "high": 1.0},
+        "r_ohm": {"low": 0.0, "high": 50.0},
+        "c_ff": {"low": 0.0, "high": 500.0},
+        "tau_ps": {"low": 0.0, "high": 12.5},
+        "via_coverage": {"low": 0.85, "high": 1.0},
+        "similarity": {"low": 80.0, "high": 100.0},
+    }
+    t = RoutingThresholds.from_dict(d)
+    assert t.h_ratio == Range(0.0, 0.2)
+    assert t.r_ohm.high == 50.0
+
+
+def test_thresholds_to_dict_roundtrip():
+    t = RoutingThresholds()
+    d = t.to_dict()
+    assert isinstance(d["h_ratio"], dict)
+    assert d["h_ratio"]["low"] == 0.0
+    assert d["h_ratio"]["high"] == 0.15
+    t2 = RoutingThresholds.from_dict(d)
+    assert t2.h_ratio == t.h_ratio
+    assert t2.r_ohm == t.r_ohm

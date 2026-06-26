@@ -5,7 +5,7 @@ Used by Configuration tab (load/save YAML) and Layout Review tab (gate check).
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -64,24 +64,44 @@ class Range:
 # Built-in presets (used when no YAML is found)
 _BUILTIN_PRESETS: Dict[str, Dict[str, Any]] = {
     "sram_7nm_wl": {
-        "net_class": "wl", "max_h_ratio": 0.15, "max_v_ratio": 1.0,
-        "max_r_ohm": 100.0, "max_c_ff": 500.0, "max_tau_ps": 12.5,
-        "min_via_coverage": 0.85, "min_similarity": 80.0,
+        "net_class": "wl",
+        "h_ratio":    {"low": 0.0, "high": 0.15},
+        "v_ratio":    {"low": 0.0, "high": 1.0},
+        "r_ohm":      {"low": 0.0, "high": 100.0},
+        "c_ff":       {"low": 0.0, "high": 500.0},
+        "tau_ps":     {"low": 0.0, "high": 12.5},
+        "via_coverage": {"low": 0.85, "high": 1.0},
+        "similarity": {"low": 80.0, "high": 100.0},
     },
     "sram_5nm_io_bl": {
-        "net_class": "io", "max_h_ratio": 1.0, "max_v_ratio": 0.10,
-        "max_r_ohm": 80.0, "max_c_ff": 400.0, "max_tau_ps": 10.0,
-        "min_via_coverage": 0.90, "min_similarity": 80.0,
+        "net_class": "io",
+        "h_ratio":    {"low": 0.0, "high": 1.0},
+        "v_ratio":    {"low": 0.0, "high": 0.10},
+        "r_ohm":      {"low": 0.0, "high": 80.0},
+        "c_ff":       {"low": 0.0, "high": 400.0},
+        "tau_ps":     {"low": 0.0, "high": 10.0},
+        "via_coverage": {"low": 0.90, "high": 1.0},
+        "similarity": {"low": 80.0, "high": 100.0},
     },
     "analog_default": {
-        "net_class": "analog", "max_h_ratio": 0.60, "max_v_ratio": 0.60,
-        "max_r_ohm": 200.0, "max_c_ff": 1000.0, "max_tau_ps": 25.0,
-        "min_via_coverage": 0.70, "min_similarity": 70.0,
+        "net_class": "analog",
+        "h_ratio":    {"low": 0.0, "high": 0.60},
+        "v_ratio":    {"low": 0.0, "high": 0.60},
+        "r_ohm":      {"low": 0.0, "high": 200.0},
+        "c_ff":       {"low": 0.0, "high": 1000.0},
+        "tau_ps":     {"low": 0.0, "high": 25.0},
+        "via_coverage": {"low": 0.70, "high": 1.0},
+        "similarity": {"low": 70.0, "high": 100.0},
     },
     "power_relaxed": {
-        "net_class": "power", "max_h_ratio": 1.0, "max_v_ratio": 1.0,
-        "max_r_ohm": 500.0, "max_c_ff": 5000.0, "max_tau_ps": 100.0,
-        "min_via_coverage": 0.50, "min_similarity": 0.0,
+        "net_class": "power",
+        "h_ratio":    {"low": 0.0, "high": 1.0},
+        "v_ratio":    {"low": 0.0, "high": 1.0},
+        "r_ohm":      {"low": 0.0, "high": 500.0},
+        "c_ff":       {"low": 0.0, "high": 5000.0},
+        "tau_ps":     {"low": 0.0, "high": 100.0},
+        "via_coverage": {"low": 0.50, "high": 1.0},
+        "similarity": {"low": 0.0, "high": 100.0},
     },
 }
 
@@ -90,24 +110,28 @@ _BUILTIN_PRESETS: Dict[str, Dict[str, Any]] = {
 class RoutingThresholds:
     """Gating thresholds for routing review.
 
+    Each metric is a [low, high] interval. A value passes iff
+    low <= value <= high. The aggregate pass/fail for a net is
+    computed in core.routing_metrics.check_gates.
+
     Attributes:
         net_class: Routing class (wl/io/analog/power) — only used for display.
-        max_h_ratio: Max allowed H-direction length ratio (0-1). Net fails if exceeded.
-        max_v_ratio: Max allowed V-direction length ratio (0-1). Net fails if exceeded.
-        max_r_ohm: Max total resistance in Ohms.
-        max_c_ff: Max total capacitance in fF.
-        max_tau_ps: Max effective tau in ps.
-        min_via_coverage: Min required via coverage (0-1).
-        min_similarity: Min required Golden similarity score (0-100).
+        h_ratio: H-direction length ratio range.
+        v_ratio: V-direction length ratio range.
+        r_ohm: Total resistance range (Ohms).
+        c_ff: Total capacitance range (fF).
+        tau_ps: Effective tau range (ps).
+        via_coverage: Via coverage ratio range.
+        similarity: Golden similarity score range (0-100).
     """
     net_class: str = "wl"
-    max_h_ratio: float = 0.15
-    max_v_ratio: float = 0.95
-    max_r_ohm: float = 100.0
-    max_c_ff: float = 500.0
-    max_tau_ps: float = 12.5
-    min_via_coverage: float = 0.85
-    min_similarity: float = 80.0
+    h_ratio: Range = field(default_factory=lambda: Range(0.0, 0.15))
+    v_ratio: Range = field(default_factory=lambda: Range(0.0, 1.0))
+    r_ohm: Range = field(default_factory=lambda: Range(0.0, 100.0))
+    c_ff: Range = field(default_factory=lambda: Range(0.0, 500.0))
+    tau_ps: Range = field(default_factory=lambda: Range(0.0, 12.5))
+    via_coverage: Range = field(default_factory=lambda: Range(0.85, 1.0))
+    similarity: Range = field(default_factory=lambda: Range(80.0, 100.0))
 
     @classmethod
     def for_preset(cls, preset_name: str) -> "RoutingThresholds":
@@ -120,30 +144,41 @@ class RoutingThresholds:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "RoutingThresholds":
-        """Build from dict (YAML/JSON compatible)."""
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        """Build from dict (YAML/JSON compatible).
+
+        Accepts nested {low, high} dicts for Range fields.
+        """
+        kwargs: Dict[str, Any] = {}
+        for k, v in d.items():
+            if k not in cls.__dataclass_fields__:
+                continue
+            field_type = str(cls.__dataclass_fields__[k].type)
+            if "Range" in field_type and isinstance(v, dict):
+                kwargs[k] = Range(v["low"], v["high"])
+            else:
+                kwargs[k] = v
+        return cls(**kwargs)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize to dict."""
+        """Serialize to dict (Range fields become {low, high} dicts via asdict)."""
         return asdict(self)
 
     def validate(self) -> None:
-        """Sanity check. Raises ValueError on invalid config."""
-        for name in ("max_h_ratio", "max_v_ratio", "min_via_coverage", "min_similarity"):
-            v = getattr(self, name)
-            if not (0.0 <= v <= 1.0 if name != "min_similarity" else 0.0 <= v <= 100.0):
-                raise ValueError(f"{name} out of range: {v}")
-        for name in ("max_r_ohm", "max_c_ff", "max_tau_ps"):
-            v = getattr(self, name)
-            if v <= 0:
-                raise ValueError(f"{name} must be positive: {v}")
-        # Ensure at least one direction is allowed to dominate (sum ≥ 1.0).
-        # If sum < 1.0, no net can be 100% in any direction without failing one gate.
-        if self.max_h_ratio + self.max_v_ratio < 1.0:
+        """Sanity check. Raises ValueError on invalid config.
+
+        - Each Range: low <= high (already enforced in __post_init__)
+        - h_ratio.high + v_ratio.high >= 1.0
+        - r_ohm.high, c_ff.high, tau_ps.high must be > 0
+        """
+        if self.h_ratio.high + self.v_ratio.high < 1.0 - 1e-9:
             raise ValueError(
-                f"sum of max ratios ({self.max_h_ratio}+{self.max_v_ratio}) < 1.0, "
-                "no direction can dominate"
+                f"h_ratio.high ({self.h_ratio.high}) + v_ratio.high "
+                f"({self.v_ratio.high}) must sum to >= 1.0"
             )
+        for name in ("r_ohm", "c_ff", "tau_ps"):
+            v = getattr(self, name).high
+            if v <= 0:
+                raise ValueError(f"{name}.high must be positive: {v}")
 
     @classmethod
     def list_presets(cls) -> List[str]:
