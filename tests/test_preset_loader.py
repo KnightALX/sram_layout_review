@@ -18,7 +18,7 @@ def test_load_preset_yaml_returns_thresholds():
     t = load_preset_yaml("sram_7nm_wl")
     assert isinstance(t, RoutingThresholds)
     assert t.net_class == "wl"
-    assert t.max_h_ratio == 0.15
+    assert t.h_ratio.high == 0.15
     t.validate()  # must not raise
 
 
@@ -42,7 +42,7 @@ def test_load_raises_on_missing_keys(tmp_path):
 def test_load_preset_yaml_with_nested_low_high(tmp_path):
     """YAML with nested {low, high} dicts loads into RoutingThresholds with Range fields."""
     import yaml
-    from config.preset_loader import load_preset_yaml
+    from config.preset_loader import load_preset_yaml, load_preset_from_file
 
     yaml_path = tmp_path / "test_range.yaml"
     yaml_path.write_text(yaml.safe_dump({
@@ -55,8 +55,13 @@ def test_load_preset_yaml_with_nested_low_high(tmp_path):
         "via_coverage": {"low": 0.85, "high": 1.0},
         "similarity": {"low": 80.0, "high": 100.0},
     }))
-    t = load_preset_yaml("test_range", presets_dir=tmp_path)
+    # Pass the full path to load_preset_yaml (it accepts either name or path)
+    t = load_preset_yaml(str(yaml_path))
     assert t.h_ratio.high == 0.20
     assert t.r_ohm.high == 80.0
-    # validate should pass
     t.validate()
+
+    # Also test load_preset_from_file directly
+    t2 = load_preset_from_file(str(yaml_path))
+    assert t2.h_ratio.low == 0.0
+    assert t2.similarity.high == 100.0

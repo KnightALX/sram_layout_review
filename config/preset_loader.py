@@ -121,12 +121,12 @@ def load_preset_from_file(path: str) -> RoutingThresholds:
         filled = _apply_defaults(normalized)
         result = RoutingThresholds.from_dict(filled)
         # Schema-aware explicit h+v check (mirrors RoutingThresholds.validate but
-        # surfaces a single, preset-specific error). The RoutingThresholds
-        # dataclass has no __post_init__ so we must enforce here.
-        if (result.max_h_ratio + result.max_v_ratio) < 1.0 - 1e-9:
+        # surfaces a single, preset-specific error). Use the Range .high field
+        # to keep the same numeric semantics as the old max_* fields.
+        if (result.h_ratio.high + result.v_ratio.high) < 1.0 - 1e-9:
             raise PresetValidationError(
-                f"max_h_ratio ({result.max_h_ratio}) + max_v_ratio "
-                f"({result.max_v_ratio}) must sum to >= 1.0"
+                f"h_ratio.high ({result.h_ratio.high}) + v_ratio.high "
+                f"({result.v_ratio.high}) must sum to >= 1.0"
             )
         return result
     except PresetValidationError:
