@@ -201,8 +201,13 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
 
 def _build_similarity_table() -> dash_table.DataTable:
     """Build the per-net sortable results table with minimal styling."""
-    rows = _build_table_rows(routing_state.batch_results)
-    style_data_conditional = _compute_table_styles(rows)
+    batch_results = routing_state.batch_results
+    rows = _build_table_rows(batch_results)
+    thresholds = routing_state.get_thresholds()
+    cell_violation_map = _build_cell_violation_map(batch_results, thresholds)
+    style_data_conditional = _compute_table_styles(
+        rows, batch_results, cell_violation_map, thresholds,
+    )
     return dash_table.DataTable(
         data=rows,
         columns=[{"name": k, "id": k} for k in
@@ -228,6 +233,8 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
     dashes for all numeric fields — these nets had no polygons to analyze,
     so any zero values would be misleading.
 
+    Numeric measurements are formatted via `_format_cell` so each cell
+    carries the `\u2208 [low, high]` / `\u2209 [low, high]` annotation.
     The C (fF) column (and cards) use routing_state.get_thresholds() so
     table always reflects latest Config tab settings (re-run to refresh
     after changing thresholds).
@@ -251,52 +258,60 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
                 "Pass": "⚠",
             })
         else:
+            # Render the measured value with its threshold band annotation.
+            c_cell = _format_cell(m["c_total"], thresholds.c_ff)
             rows.append({
                 "Net": name,
                 "Dominant": m["dominant"],
-                "H %": f"{m['h_ratio']*100:.1f}",
-                "V %": f"{m['v_ratio']*100:.1f}",
-                "R (Ω)": f"{m['r_total']:.2f}",
-                "C (fF)": f"{m['c_total']:.1f} / {thresholds.max_c_ff:.1f}",
-                "τ (ps)": f"{m['effective_tau_ps']:.2f}",
-                "Via Cov": f"{m['via_coverage']*100:.1f}",
+                "H %": _format_cell(m["h_ratio"] * 100, thresholds.h_ratio),
+                "V %": _format_cell(m["v_ratio"] * 100, thresholds.v_ratio),
+                "R (Ω)": _format_cell(m["r_total"], thresholds.r_ohm, "{:.2f}"),
+                "C (fF)": f"{c_cell} / max {thresholds.max_c_ff:.1f}",
+                "τ (ps)": _format_cell(m["effective_tau_ps"], thresholds.tau_ps, "{:.2f}"),
+                "Via Cov": _format_cell(m["via_coverage"] * 100, thresholds.via_coverage),
                 "Miss Via": m["missing_via_count"],
-                "Sim": f"{m['similarity_score']:.1f}",
+                "Sim": _format_cell(m["similarity_score"], thresholds.similarity),
                 "Pass": "✓" if m["gate_pass"] else "✗",
             })
     return rows
 
 
-def _compute_table_styles(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Return style_data_conditional rules for the per-net table.
+def _compute_table_styles(rows: List[Dict[str, Any]],
+                          batch_results: Dict[str, Dict[str, Any]],
+                          cell_violation_map: Dict[str, Set[str]],
+                          thresholds: RoutingThresholds) -> List[Dict[str, Any]]:
+    """Return the list of conditional styling rules for the per-net table.
 
-    Minimal styling per user feedback: just the pill-style Pass cell.
-    Data bars and row-level tint were removed — the user found them too flashy.
-    Three states: ✓ (green), ✗ (red), ⚠ (amber) — ⚠ means the net had no
-    polygons to analyze (status="no_data") and should look distinct from
-    a real gate failure.
+    Includes:
+    - Pass column pill (\u2717 red, \u2713 green, \u26a0 amber)
+    - Out-of-range cell light-red background (per cell_violation_map)
     """
-    return [
-        # Pill-style Pass cell — green ✓ / red ✗ / amber ⚠
-        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "✗"'},
+    styles = [
+        # Pass column pill rules
+        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "\u2717"'},
          "backgroundColor": "rgba(239, 68, 68, 0.85)",
-         "color": "white",
-         "fontWeight": "700",
-         "textAlign": "center",
-         "borderRadius": "10px"},
-        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "✓"'},
-         "backgroundColor": "rgba(34, 197, 94, 0.85)",
-         "color": "white",
-         "fontWeight": "700",
-         "textAlign": "center",
-         "borderRadius": "10px"},
-        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "⚠"'},
-         "backgroundColor": "rgba(245, 158, 11, 0.85)",
-         "color": "white",
-         "fontWeight": "700",
-         "textAlign": "center",
-         "borderRadius": "10px"},
+         "color": "white", "fontWeight": "600",
+         "textAlign": "center", "borderRadius": "3px"},
+        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "\u2713"'},
+         "backgroundColor": "rgba(39, 174, 96, 0.85)",
+         "color": "white", "fontWeight": "600",
+         "textAlign": "center", "borderRadius": "3px"},
+        {"if": {"column_id": "Pass", "filter_query": '{Pass} = "\u26a0"'},
+         "backgroundColor": "rgba(243, 156, 18, 0.85)",
+         "color": "white", "fontWeight": "600",
+         "textAlign": "center", "borderRadius": "3px"},
     ]
+    # Out-of-range cell light-red backgrounds
+    for net_name, bad_cols in cell_violation_map.items():
+        for col in bad_cols:
+            styles.append({
+                "if": {
+                    "column_id": col,
+                    "filter_query": f'{{Net}} = "{net_name}"',
+                },
+                "backgroundColor": "rgba(239, 68, 68, 0.15)",
+            })
+    return styles
 
 
 def create_routing_review_tab():
@@ -590,8 +605,13 @@ def register_routing_review_callbacks(app):
             fig = go.Figure()
 
         # Table + dropdown + metric cards
-        rows = _build_table_rows(routing_state.batch_results)
-        style_data_conditional = _compute_table_styles(rows)
+        batch_results = routing_state.batch_results
+        rows = _build_table_rows(batch_results)
+        thresholds = routing_state.get_thresholds()
+        cell_violation_map = _build_cell_violation_map(batch_results, thresholds)
+        style_data_conditional = _compute_table_styles(
+            rows, batch_results, cell_violation_map, thresholds,
+        )
         opts = [{"label": n, "value": n} for n in routing_state.batch_net_names]
         metric_cards = _build_metric_cards(routing_state.batch_results)
         return (fig, rows, style_data_conditional, opts, metric_cards,
