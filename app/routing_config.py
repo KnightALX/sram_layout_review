@@ -647,21 +647,11 @@ def create_routing_config_tab():
                                  "fontWeight": "600", "display": "none"}),
             ], className="card-header"),
             html.Div([
-                # Grid of threshold inputs
+                # Range slider groups (replaces legacy thresh-{name} inputs)
                 html.Div([
-                    html.Div([
-                        html.Label(label, className="form-label"),
-                        dcc.Input(
-                            id=f"thresh-{name}",
-                            type="number",
-                            value=getattr(thr, name),
-                            min=mn, max=mx, step=st,
-                            disabled=is_frozen,  # centralized read above
-                            className="input-field",
-                        ),
-                    ], className="form-group")
-                    for (name, label, mn, mx, st) in THRESHOLD_FIELDS
-                ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr", "gap": "12px"}),
+                    _build_range_input_group(field)
+                    for field in RANGE_FIELDS
+                ], style={"display": "flex", "flexDirection": "column", "gap": "8px"}),
                 # Apply button + status
                 html.Div([
                     html.Button("✓ Apply Thresholds", id="btn-apply-thresholds",

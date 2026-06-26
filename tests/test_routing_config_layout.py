@@ -4,7 +4,6 @@ sys.path.insert(0, '.')
 
 from app import routing_config
 from app.routing_config import (
-    THRESHOLD_FIELDS,
     _mode_button_classes,
     _disabled_list,
     _compute_rehydrate_outputs,
@@ -298,3 +297,17 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
         assert abs(final_tau - 7.7) < 1e-9 or abs(final_tau - preset_tau) < 1e-9
     finally:
         _restore_state_snapshot(snap)
+
+
+def test_create_routing_config_tab_uses_range_sliders():
+    from app.routing_config import create_routing_config_tab
+    el = create_routing_config_tab()
+    s = str(el)
+    # 7 sliders, 14 inputs (low + high for each of 7 fields)
+    assert s.count("id='slider-") == 7
+    assert s.count("id='input-") == 14
+    # No thresh- inputs (legacy) — only check actual input fields (dcc.Input
+    # renders with `type='number', id='thresh-...'` in its repr). The badge
+    # Span (id='thresh-unsaved-badge') and apply-status Div are display-only
+    # and are intentionally kept (see Task 4 / design plan).
+    assert "type='number', id='thresh-" not in s
