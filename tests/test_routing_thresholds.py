@@ -2,33 +2,38 @@
 import pytest
 
 from config.preset_loader import list_yaml_presets, load_preset_yaml
-from config.routing_thresholds import _BUILTIN_PRESETS, RoutingThresholds
+from config.routing_thresholds import _BUILTIN_PRESETS, Range, RoutingThresholds
 
 
 def test_default_thresholds_for_wl_net():
     """WL net should have tight h_ratio gate (horizontal-dominant)."""
     t = RoutingThresholds.for_preset("sram_7nm_wl")
     assert t.net_class == "wl"  # wordline, expects dominant H
-    assert t.max_h_ratio == 0.15
-    assert t.max_tau_ps == 12.5
-    assert t.min_via_coverage == 0.85
-    assert t.min_similarity == 80.0
+    assert t.h_ratio.high == 0.15
+    assert t.tau_ps.high == 12.5
+    assert t.via_coverage.low == 0.85
+    assert t.similarity.low == 80.0
 
 
 def test_default_thresholds_for_io_net():
     """IO/BL net should have tight v_ratio gate (vertical-dominant)."""
     t = RoutingThresholds.for_preset("sram_5nm_io_bl")
     assert t.net_class == "io"
-    assert t.max_v_ratio == 0.10
-    assert t.max_tau_ps == 10.0
+    assert t.v_ratio.high == 0.10
+    assert t.tau_ps.high == 10.0
 
 
 def test_to_dict_round_trip():
     """to_dict and from_dict must be symmetric."""
     t = RoutingThresholds(
-        net_class="wl", max_h_ratio=0.20, max_v_ratio=0.85,
-        max_r_ohm=100.0, max_c_ff=500.0, max_tau_ps=15.0,
-        min_via_coverage=0.80, min_similarity=75.0,
+        net_class="wl",
+        h_ratio=Range(0.0, 0.20),
+        v_ratio=Range(0.0, 0.85),
+        r_ohm=Range(0.0, 100.0),
+        c_ff=Range(0.0, 500.0),
+        tau_ps=Range(0.0, 15.0),
+        via_coverage=Range(0.80, 1.0),
+        similarity=Range(75.0, 100.0),
     )
     d = t.to_dict()
     t2 = RoutingThresholds.from_dict(d)
@@ -36,13 +41,18 @@ def test_to_dict_round_trip():
 
 
 def test_validate_rejects_inverted_ratios():
-    """max_h_ratio + max_v_ratio must allow at least 50% slack (so one direction can dominate)."""
+    """h_ratio.high + v_ratio.high must allow at least 50% slack (so one direction can dominate)."""
     t = RoutingThresholds(
-        net_class="wl", max_h_ratio=0.30, max_v_ratio=0.30,
-        max_r_ohm=100.0, max_c_ff=500.0, max_tau_ps=15.0,
-        min_via_coverage=0.80, min_similarity=75.0,
+        net_class="wl",
+        h_ratio=Range(0.0, 0.30),
+        v_ratio=Range(0.0, 0.30),
+        r_ohm=Range(0.0, 100.0),
+        c_ff=Range(0.0, 500.0),
+        tau_ps=Range(0.0, 15.0),
+        via_coverage=Range(0.80, 1.0),
+        similarity=Range(75.0, 100.0),
     )
-    with pytest.raises(ValueError, match="sum of max ratios"):
+    with pytest.raises(ValueError, match="sum to >= 1.0"):
         t.validate()
 
 
@@ -64,8 +74,8 @@ def test_all_builtin_and_yaml_presets_pass_validate():
         # Cross-check against builtin equivalent when present
         if name in _BUILTIN_PRESETS:
             t2 = RoutingThresholds.for_preset(name)
-            assert abs(t.max_h_ratio - t2.max_h_ratio) < 1e-12
-            assert abs(t.max_v_ratio - t2.max_v_ratio) < 1e-12
+            assert abs(t.h_ratio.high - t2.h_ratio.high) < 1e-12
+            assert abs(t.v_ratio.high - t2.v_ratio.high) < 1e-12
 
     # TDD for Task 6 Step 1: also validate raw dicts (simulates what "run validate on load" will enforce for builtins at import time)
     # If any builtin dict would fail validate, this (and on-load guard) catches it.

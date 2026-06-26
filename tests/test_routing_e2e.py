@@ -41,7 +41,7 @@ def test_io_bl_preset_v_dominant_passes():
 def test_long_wire_fails_tau_gate():
     """A long wire (1000μm) should fail the τ gate."""
     polys = [Polygon(points=[Point(0,0), Point(1000,0), Point(1000,0.1), Point(0,0.1)], layer="met1")]
-    t = RoutingThresholds.for_preset("sram_7nm_wl")  # max_tau_ps=12.5
+    t = RoutingThresholds.for_preset("sram_7nm_wl")  # tau_ps.high=12.5
     m = compute_for_net("WL0", polys, [], _tech(), t, golden_metrics=None)
     assert any("τ" in r or "tau" in r for r in m["gate_fail_reasons"])
 
@@ -105,7 +105,7 @@ def test_build_metric_cards_includes_eff_c_and_threshold_display():
 
 
 def test_build_table_rows_includes_c_column_with_threshold():
-    """Verify Task 3 Step 2: C (fF) column uses value / threshold format."""
+    """Verify Task 3 Step 2: C (fF) column shows the c_ff Range bounds."""
     from app.routing_review import _build_table_rows
     from app.routing_state import routing_state
 
@@ -126,9 +126,11 @@ def test_build_table_rows_includes_c_column_with_threshold():
         row = rows[0]
         assert "C (fF)" in row
         c_val = row["C (fF)"]
-        assert "120.5 / " in c_val, f"C column must be 'val / thresh' form, got {c_val}"
-        # thresh should be positive number from get_thresholds
-        assert any(ch.isdigit() for ch in c_val.split("/")[-1])
+        # New format: "<value> ∈ [<low>, <high>]"
+        assert "120.5" in c_val, f"C column must include value, got {c_val}"
+        assert "∈" in c_val or "in" in c_val.lower(), f"C column must show Range, got {c_val}"
+        # thresh (high bound) should be a positive number
+        assert any(ch.isdigit() for ch in c_val)
     finally:
         routing_state.set_frozen_mode(prev)
 

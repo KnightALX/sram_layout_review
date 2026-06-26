@@ -4,6 +4,7 @@ sys.path.insert(0, '.')
 
 from app import routing_config
 from app.routing_config import (
+    RANGE_FIELDS,
     _mode_button_classes,
     _disabled_list,
     _compute_rehydrate_outputs,
@@ -42,7 +43,7 @@ def _reset():
 
 
 def test_threshold_fields_have_seven_entries():
-    assert len(THRESHOLD_FIELDS) == 7
+    assert len(RANGE_FIELDS) == 7
 
 
 def test_mode_button_classes_frozen():
@@ -58,19 +59,19 @@ def test_mode_button_classes_editable():
 
 
 def test_disabled_list_frozen_all_true():
-    assert _disabled_list(True, 7) == [True] * 7
+    assert _disabled_list(True, 14) == [True] * 14
 
 
 def test_disabled_list_editable_all_false():
-    assert _disabled_list(False, 7) == [False] * 7
+    assert _disabled_list(False, 14) == [False] * 14
 
 
-def test_compute_rehydrate_outputs_returns_21_values():
+def test_compute_rehydrate_outputs_returns_42_values():
     snap = _save_state_snapshot()
     try:
         _reset()
         out = _compute_rehydrate_outputs()
-        assert len(out) == 21
+        assert len(out) == 42
     finally:
         _restore_state_snapshot(snap)
 
@@ -80,7 +81,8 @@ def test_compute_rehydrate_outputs_frozen_disabled():
     try:
         _reset()
         out = _compute_rehydrate_outputs()
-        assert all(out[14:21]) is True
+        # Disabled flags occupy the last 14 positions (low + high per field)
+        assert all(out[28:42]) is True
     finally:
         _restore_state_snapshot(snap)
 
@@ -90,14 +92,24 @@ def test_compute_rehydrate_outputs_uses_preset_values():
     try:
         _reset()
         out = _compute_rehydrate_outputs()
-        # sram_7nm_wl: h=0.15, v=1.0, r=100, c=500, tau=12.5, via=0.85, sim=80
-        assert out[7] == 0.15
-        assert out[8] == 1.0
-        assert out[9] == 100.0
-        assert out[10] == 500.0
-        assert out[11] == 12.5
-        assert out[12] == 0.85
-        assert out[13] == 80.0
+        # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
+        # [14..20]=low_vals, [21..27]=high_vals
+        # sram_7nm_wl: h=[0,0.15], v=[0,1], r=[0,100], c=[0,500], tau=[0,12.5], via=[0.85,1], sim=[80,100]
+        assert out[7] == [0.0, 0.15]   # slider h
+        assert out[14] == 0.0          # low h
+        assert out[21] == 0.15         # high h
+        assert out[15] == 0.0          # low v
+        assert out[22] == 1.0          # high v
+        assert out[16] == 0.0          # low r
+        assert out[23] == 100.0        # high r
+        assert out[17] == 0.0          # low c
+        assert out[24] == 500.0        # high c
+        assert out[18] == 0.0          # low tau
+        assert out[25] == 12.5         # high tau
+        assert out[19] == 0.85         # low via
+        assert out[26] == 1.0          # high via
+        assert out[20] == 80.0         # low sim
+        assert out[27] == 100.0        # high sim
     finally:
         _restore_state_snapshot(snap)
 
@@ -145,18 +157,24 @@ def test_rehydrate_after_apply_shows_custom_values_and_editable():
         _reset()
         # Go editable and apply a different tau + r
         routing_state.set_frozen_mode(False)
-        custom_vals = (0.20, 0.95, 77.0, 333.0, 9.5, 0.80, 75.0)
+        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+        custom_vals = (0.0, 0.20, 0.0, 0.95, 0.0, 77.0, 0.0, 333.0,
+                       0.0, 9.5, 0.80, 1.0, 75.0, 100.0)
         _apply_thresholds(custom_vals)
 
         out = _compute_rehydrate_outputs()
-        # Values at indices 7..13 should be the applied ones
-        assert abs(out[7] - 0.20) < 1e-9   # h
-        assert abs(out[9] - 77.0) < 1e-9   # r
-        assert abs(out[11] - 9.5) < 1e-9   # tau
-        # Last 7 are disabled flags -> all False because now editable after apply
-        assert all(d is False for d in out[14:21])
-        # Mode buttons: frozen should be the non-active style
-        # (we only assert that editable is the "primary" one)
+        # Slider values are [low, high] pairs at indices 7..13
+        assert abs(out[7][1] - 0.20) < 1e-9   # slider h high
+        assert abs(out[8][1] - 0.95) < 1e-9   # slider v high
+        assert abs(out[9][1] - 77.0) < 1e-9   # slider r high
+        assert abs(out[11][1] - 9.5) < 1e-9   # slider tau high
+        # High values: indices 21..27
+        assert abs(out[21] - 0.20) < 1e-9     # high h
+        assert abs(out[23] - 77.0) < 1e-9     # high r
+        assert abs(out[25] - 9.5) < 1e-9      # high tau
+        # Disabled flags (last 14) all False because editable after apply
+        assert all(d is False for d in out[28:42])
+        # Mode buttons: editable should be the "primary" one
         assert "primary" in out[1] or "btn-primary" in out[1]
     finally:
         _restore_state_snapshot(snap)
@@ -173,12 +191,14 @@ def test_apply_thresholds_updates_state_and_clears_badges():
         routing_state.last_status = "Reviewed 3 nets"
         routing_state.set_frozen_mode(True)
 
-        good_vals = (0.25, 0.90, 120.0, 600.0, 15.0, 0.88, 82.0)
+        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+        good_vals = (0.0, 0.25, 0.0, 0.90, 0.0, 120.0, 0.0, 600.0,
+                     0.0, 15.0, 0.88, 1.0, 82.0, 100.0)
         _apply_thresholds(good_vals)
 
         assert routing_state.is_frozen is False
         assert routing_state.custom_thresholds is not None
-        assert abs(routing_state.custom_thresholds.max_tau_ps - 15.0) < 1e-9
+        assert abs(routing_state.custom_thresholds.tau_ps.high - 15.0) < 1e-9
         assert routing_state.last_error is None
         assert routing_state.last_status == ""
     finally:
@@ -226,14 +246,17 @@ def test_tab_rehydrate_uses_authoritative_state_not_stale_inputs():
         routing_state.custom_thresholds = RoutingThresholds.from_dict(
             routing_state.thresholds.to_dict()
         )
-        routing_state.custom_thresholds.max_c_ff = 1234.0
+        from config.routing_thresholds import Range
+        old_c = routing_state.custom_thresholds.c_ff
+        routing_state.custom_thresholds.c_ff = Range(old_c.low, 1234.0)
 
         # Direct rehydrate (what tab listener now calls) must ignore any other numbers
         out = _compute_rehydrate_outputs()
-        c_idx = 7 + 3  # c_ff is the 4th thresh field (0-based 3)
-        assert abs(out[c_idx] - 1234.0) < 1e-9
-        # inputs must be enabled
-        assert out[14] is False
+        # c_ff is the 4th field (0-based 3): slider index 7+3=10, high index 21+3=24
+        assert abs(out[10][1] - 1234.0) < 1e-9
+        assert abs(out[24] - 1234.0) < 1e-9
+        # inputs must be enabled (first disabled is at index 28)
+        assert out[28] is False
     finally:
         _restore_state_snapshot(snap)
 
@@ -252,19 +275,25 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
         _reset()
         # Start in frozen (default)
         assert routing_state.is_frozen is True
-        preset_tau = routing_state.get_thresholds().max_tau_ps
+        preset_tau = routing_state.get_thresholds().tau_ps.high
 
         # Switch to editable, change a value, apply (persistence path)
         routing_state.set_frozen_mode(False)
-        edited_vals = (0.18, 0.92, 88.0, 420.0, 7.7, 0.82, 78.0)
+        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+        edited_vals = (0.0, 0.18, 0.0, 0.92, 0.0, 88.0, 0.0, 420.0,
+                       0.0, 7.7, 0.82, 1.0, 78.0, 100.0)
         _apply_thresholds(edited_vals)
 
         # Simulate tab switch to Config: call rehydrate refresh function
         out = _compute_rehydrate_outputs()
         # After apply + rehydrate: should show custom (not preset), editable (disabled=False)
-        tau_idx = 7 + 4  # max_tau_ps is 5th (0-based 4)
-        assert abs(out[tau_idx] - 7.7) < 1e-9
-        assert all(d is False for d in out[14:21])
+        # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
+        tau_slider_idx = 7 + 4
+        tau_high_idx = 21 + 4
+        assert abs(out[tau_slider_idx][1] - 7.7) < 1e-9
+        assert abs(out[tau_high_idx] - 7.7) < 1e-9
+        # Disabled flags (last 14) all False because editable
+        assert all(d is False for d in out[28:42])
 
         # Now switch to Review tab simulation: use review refresh helpers
         from app.routing_review import _build_metric_cards, _build_threshold_source
@@ -274,26 +303,21 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
 
         # Apply should have set is_frozen False + custom
         assert routing_state.is_frozen is False
-        assert abs(routing_state.get_thresholds().max_tau_ps - 7.7) < 1e-9
+        assert abs(routing_state.get_thresholds().tau_ps.high - 7.7) < 1e-9
 
         # Simulate "tab switch back" + freeze mode via state + rehydrate
         routing_state.set_frozen_mode(True)
         out2 = _compute_rehydrate_outputs()
         # In frozen after, values should reflect the preset backing (not the draft custom)
-        # (get_thresholds returns .thresholds when frozen)
-        assert abs(out2[tau_idx] - preset_tau) < 1e-9
+        assert abs(out2[tau_slider_idx][1] - preset_tau) < 1e-9
         # disabled should now be True
-        assert all(d is True for d in out2[14:21])
+        assert all(d is True for d in out2[28:42])
         assert routing_state.is_frozen is True
 
         # Draft is preserved (even if not shown while frozen)
-        # (re-enter editable should bring the previous custom back if Apply had set it before freeze)
-        # For this test, after re-freeze, custom may be the draft; switching editable keeps it per design
         routing_state.set_frozen_mode(False)
         out3 = _compute_rehydrate_outputs()
-        # If draft was captured at last apply, tau would still be edited; but freeze+edit toggle semantics
-        # preserve the last applied custom as draft. Check via get (after unfreeze)
-        final_tau = routing_state.get_thresholds().max_tau_ps
+        final_tau = routing_state.get_thresholds().tau_ps.high
         assert abs(final_tau - 7.7) < 1e-9 or abs(final_tau - preset_tau) < 1e-9
     finally:
         _restore_state_snapshot(snap)

@@ -47,12 +47,24 @@ def test_compute_for_net_returns_all_six_metrics():
 
 
 def test_wl_net_with_violation_fails_gate():
-    """A 'horizontal-only' net should fail WL preset (expect V-dominant)."""
+    """A 'horizontal-only' net should trigger h_ratio soft fail on WL preset.
+    With the new contract, soft fails (h_ratio/v_ratio) do NOT set
+    gate_pass=False — only hard fails do. So we verify via check_gates that
+    a soft reason is reported for h_ratio.
+    """
+    from core.routing_metrics import check_gates
     polys = [_rect(0, 0, 10, 1, "met2")]  # only H
-    m = compute_for_net("WL0", polys, [], _tech_layers(),
-                        RoutingThresholds.for_preset("sram_7nm_wl"), golden_metrics=None)
-    assert m["gate_pass"] is False
-    assert any("h_ratio" in r or "v_ratio" in r for r in m["gate_fail_reasons"])
+    thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
+    metrics = {
+        "h_ratio": 1.0, "v_ratio": 0.0,
+        "r_total": 0.0, "c_total": 0.0, "effective_tau_ps": 0.0,
+        "via_coverage": 1.0, "missing_via_count": 0,
+        "similarity_score": 100.0,
+    }
+    hard, soft = check_gates(metrics, thresholds, has_golden=False)
+    # h_ratio soft fail expected; gate_pass remains True (no hard)
+    assert any("h_ratio" in r for r in soft)
+    assert not hard  # no hard failures
 
 
 def test_golden_match_yields_100_similarity():
@@ -76,9 +88,10 @@ def test_check_gates_returns_fail_reasons():
         "similarity_score": 50.0,
     }
     thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
-    pass_, reasons = check_gates(metrics, thresholds)
-    assert pass_ is False
-    assert len(reasons) >= 4  # h_ratio, tau_ps, via_coverage, similarity all fail
+    hard, soft = check_gates(metrics, thresholds)
+    assert hard or soft  # at least one fails
+    # tau_ps, similarity, missing_via -> hard; h_ratio, via_coverage -> soft
+    assert len(hard) + len(soft) >= 4
 
 
 def test_soft_gates_bypassed_with_high_golden_similarity():
@@ -98,7 +111,7 @@ def test_soft_gates_bypassed_with_high_golden_similarity():
     m = compute_for_net(
         "WL0", polys, [], _tech_layers(), thresholds, golden_metrics=golden_features
     )
-    assert m["similarity_score"] >= thresholds.min_similarity
+    assert m["similarity_score"] >= thresholds.similarity.low
     assert m["gate_pass"] is True
     assert m["gate_fail_reasons"] == []
 
@@ -107,38 +120,38 @@ def test_hard_gates_never_bypassed():
     """Even with high similarity (golden set), a net with missing vias or
     excessive R must still fail — HARD gates are never bypassed."""
     thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
-    # High similarity, but R exceeds max_r_ohm (HARD fail)
+    # High similarity, but R exceeds r_ohm.high (HARD fail)
     metrics = {
         "h_ratio": 0.10, "v_ratio": 0.90,
-        "r_total": 500.0,  # >> 100.0 max_r_ohm
+        "r_total": 500.0,  # >> 100.0 r_ohm.high
         "c_total": 100.0, "effective_tau_ps": 5.0,
         "via_coverage": 0.95, "missing_via_count": 0,
         "similarity_score": 95.0,
     }
-    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
-    assert pass_ is False
-    assert any("R" in r and "max" in r for r in reasons)
+    hard, _soft = check_gates(metrics, thresholds, has_golden=True)
+    assert hard  # must fail
+    assert any("R" in r for r in hard)
     # missing_via > 0 also must always fail
     metrics["r_total"] = 50.0
     metrics["missing_via_count"] = 2
-    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
-    assert pass_ is False
-    assert any("missing_via" in r for r in reasons)
+    hard, _soft = check_gates(metrics, thresholds, has_golden=True)
+    assert hard
+    assert any("missing_via" in r for r in hard)
 
 
 def test_soft_gates_enforced_without_golden():
     """H-only net WITHOUT golden should still fail soft gates (backward compat)."""
     metrics = {
-        "h_ratio": 1.0,  # >> 0.15 max_h_ratio (soft fail)
+        "h_ratio": 1.0,  # >> 0.15 h_ratio.high (soft fail)
         "v_ratio": 0.0,
         "r_total": 10.0, "c_total": 50.0, "effective_tau_ps": 1.0,
         "via_coverage": 0.90, "missing_via_count": 0,
         "similarity_score": 100.0,  # sim OK, no golden → defaults to 100
     }
     thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
-    pass_, reasons = check_gates(metrics, thresholds, has_golden=False)
-    assert pass_ is False
-    assert any("h_ratio" in r for r in reasons)
+    _hard, soft = check_gates(metrics, thresholds, has_golden=False)
+    assert soft  # h_ratio is a soft gate
+    assert any("h_ratio" in r for r in soft)
 
 
 # --- Consistency test helper (Task 2) ---
@@ -256,14 +269,14 @@ def test_low_similarity_no_bypass():
         "v_ratio": 0.50,
         "r_total": 10.0, "c_total": 50.0, "effective_tau_ps": 1.0,
         "via_coverage": 0.90, "missing_via_count": 0,
-        "similarity_score": 60.0,  # < 80.0 min_similarity
+        "similarity_score": 60.0,  # < 80.0 similarity.low
     }
     thresholds = RoutingThresholds.for_preset("sram_7nm_wl")
-    pass_, reasons = check_gates(metrics, thresholds, has_golden=True)
-    assert pass_ is False
+    hard, soft = check_gates(metrics, thresholds, has_golden=True)
+    assert hard or soft
     # soft fail not bypassed, sim fail → reasons contain both
-    assert any("h_ratio" in r for r in reasons)
-    assert any("similarity" in r for r in reasons)
+    assert any("h_ratio" in r for r in soft)
+    assert any("similarity" in r for r in hard)
 
 
 # --- Task 7: RC equality between Properties (legacy engine path) and Routing Review ---

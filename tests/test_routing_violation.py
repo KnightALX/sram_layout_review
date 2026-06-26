@@ -1,12 +1,14 @@
 """Tests for routing violation dataclass."""
 from core.routing_violation import RoutingViolation, ViolationKind
+from config.routing_thresholds import Range
 
 
 def test_create_h_ratio_violation():
-    v = RoutingViolation.h_ratio(net_name="WL0", h_ratio=0.50, limit=0.15)
+    rng = Range(0.0, 0.15)
+    v = RoutingViolation.h_ratio(net_name="WL0", value=0.50, rng=rng)
     assert v.kind == ViolationKind.H_RATIO
     assert v.net_name == "WL0"
-    assert v.severity == "critical"
+    assert v.measured == 0.50
 
 
 def test_create_missing_via_violation():
@@ -17,10 +19,12 @@ def test_create_missing_via_violation():
 
 
 def test_serialization_round_trip():
-    v = RoutingViolation.tau_ps(net_name="WL0", tau_ps=20.0, limit=12.5)
+    rng = Range(0.0, 12.5)
+    v = RoutingViolation.tau_ps(net_name="WL0", value=20.0, rng=rng)
     d = v.to_dict()
     v2 = RoutingViolation.from_dict(d)
     assert v2.net_name == v.net_name
+    assert v2.measured == v.measured
     assert v2.tau_ps == v.tau_ps
 
 
@@ -37,9 +41,6 @@ def test_all_kinds_covered():
 
 
 def test_violation_has_direction_and_range():
-    from config.routing_thresholds import Range
-    from core.routing_violation import RoutingViolation, ViolationKind
-
     rng = Range(0.0, 0.15)
     v = RoutingViolation(
         kind=ViolationKind.H_RATIO, net_name="WL_0",
@@ -53,9 +54,6 @@ def test_violation_has_direction_and_range():
 
 
 def test_violation_factory_uses_range():
-    from config.routing_thresholds import Range
-    from core.routing_violation import RoutingViolation
-
     rng = Range(0.0, 100.0)
     v = RoutingViolation.r_ohm("WL_0", 150.0, rng)
     assert v.direction == "high"

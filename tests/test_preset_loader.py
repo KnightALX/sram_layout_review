@@ -34,7 +34,8 @@ def test_save_and_reload_round_trip(tmp_path):
 def test_load_raises_on_missing_keys(tmp_path):
     """YAML missing required fields should raise ValueError."""
     bad = tmp_path / "bad.yaml"
-    bad.write_text("net_class: wl\nmax_h_ratio: 0.2\n")  # missing other fields
+    # missing h_ratio and other required Range fields
+    bad.write_text("net_class: wl\nr_ohm: {low: 0.0, high: 100.0}\n")
     with pytest.raises(ValueError, match="Missing required fields"):
         load_preset_yaml(str(bad))
 

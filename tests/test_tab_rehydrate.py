@@ -31,9 +31,8 @@ def test_rehydrate_outputs_after_state_change():
     then switching back. Rehydrate must reflect the applied state.
     """
     from app.routing_config import _compute_rehydrate_outputs
-    # The module exports `routing_state`; alias to match plan.
     from app.routing_state import routing_state as global_routing_state
-    from config.routing_thresholds import RoutingThresholds
+    from config.routing_thresholds import Range, RoutingThresholds
 
     snap = _save_state_snapshot()
     try:
@@ -49,17 +48,23 @@ def test_rehydrate_outputs_after_state_change():
             global_routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 global_routing_state.get_thresholds().to_dict()
             )
-        global_routing_state.custom_thresholds.max_tau_ps = 88.0
+        old_tau = global_routing_state.custom_thresholds.tau_ps
+        global_routing_state.custom_thresholds.tau_ps = Range(old_tau.low, 88.0)
 
         # "Tab switch back" = calling rehydrate directly (callback body is the same)
         out = _compute_rehydrate_outputs()
 
-        # Outputs 0..6 are classes/status; 7..13 are 7 thresh values; 14..20 are disabled
-        tau_idx = 7 + 4
-        assert abs(out[tau_idx] - 88.0) < 1e-9, (
-            f"expected 88.0, got {out[tau_idx]} - rehydrate did not surface custom value"
+        # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
+        # [14..20]=low_vals, [21..27]=high_vals, [28..41]=disabled flags
+        # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
+        tau_slider_idx = 7 + 4
+        tau_high_idx = 21 + 4
+        assert abs(out[tau_slider_idx][1] - 88.0) < 1e-9, (
+            f"expected 88.0, got {out[tau_slider_idx]} - rehydrate did not surface custom value"
         )
-        assert out[14] is False  # editable -> inputs enabled
+        assert abs(out[tau_high_idx] - 88.0) < 1e-9
+        # Editable -> inputs enabled (disabled flags at 28..41)
+        assert out[28] is False
     finally:
         _restore_state_snapshot(snap)
 
@@ -68,7 +73,7 @@ def test_rehydrate_outputs_frozen_shows_preset_even_with_custom_draft():
     """When frozen but a custom draft exists, rehydrate shows preset (UI hides draft)."""
     from app.routing_config import _compute_rehydrate_outputs
     from app.routing_state import routing_state as global_routing_state
-    from config.routing_thresholds import RoutingThresholds
+    from config.routing_thresholds import Range, RoutingThresholds
 
     snap = _save_state_snapshot()
     try:
@@ -79,17 +84,22 @@ def test_rehydrate_outputs_frozen_shows_preset_even_with_custom_draft():
         global_routing_state.custom_thresholds = RoutingThresholds.from_dict(
             global_routing_state.get_thresholds().to_dict()
         )
-        global_routing_state.custom_thresholds.max_tau_ps = 88.0
+        old_tau = global_routing_state.custom_thresholds.tau_ps
+        global_routing_state.custom_thresholds.tau_ps = Range(old_tau.low, 88.0)
 
         # Use public setter (replaces previous direct _is_frozen access)
         global_routing_state.set_frozen_mode(True)
 
         out = _compute_rehydrate_outputs()
-        tau_idx = 7 + 4
-        preset_tau = RoutingThresholds.for_preset("sram_7nm_wl").max_tau_ps
-        assert abs(out[tau_idx] - preset_tau) < 1e-9
-        assert out[14] is True  # frozen -> inputs disabled
+        # tau_ps is the 5th field (0-based 4): slider at 11, high at 25
+        tau_slider_idx = 7 + 4
+        tau_high_idx = 21 + 4
+        preset_tau = RoutingThresholds.for_preset("sram_7nm_wl").tau_ps.high
+        assert abs(out[tau_slider_idx][1] - preset_tau) < 1e-9
+        assert abs(out[tau_high_idx] - preset_tau) < 1e-9
+        # Frozen -> inputs disabled (disabled flags at 28..41)
+        assert out[28] is True
         # The draft is preserved in state
-        assert global_routing_state.custom_thresholds.max_tau_ps == 88.0
+        assert global_routing_state.custom_thresholds.tau_ps.high == 88.0
     finally:
         _restore_state_snapshot(snap)

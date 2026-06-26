@@ -264,9 +264,11 @@ def compute_for_net(
         "via_coverage": vc.via_coverage,
         "similarity_score": sim_score,
     }
-    gate_pass, fail_reasons = check_gates(
+    hard_reasons, _soft_reasons = check_gates(
         metrics_for_gate, thresholds, has_golden=bool(golden_metrics)
     )
+    gate_pass = not bool(hard_reasons)
+    fail_reasons = hard_reasons
 
     return {
         "net_name": net_name,

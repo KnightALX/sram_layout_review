@@ -6,9 +6,8 @@ from app.routing_state import routing_state
 from app.routing_config import (
     _compute_rehydrate_outputs,
     _handle_routing_preset_or_thresh,
-    THRESHOLD_FIELDS,
 )
-from config.routing_thresholds import RoutingThresholds
+from config.routing_thresholds import Range, RoutingThresholds
 
 
 def _reset():
@@ -27,32 +26,40 @@ def test_apply_then_tab_switch_persists_values():
     rs.set_frozen_mode(False)
     if rs.custom_thresholds is None:
         rs.custom_thresholds = RoutingThresholds.from_dict(rs.get_thresholds().to_dict())
-    rs.custom_thresholds.max_tau_ps = 25.0
-    rs.custom_thresholds.max_r_ohm = 60.0
+    old_tau = rs.custom_thresholds.tau_ps
+    old_r = rs.custom_thresholds.r_ohm
+    rs.custom_thresholds.tau_ps = Range(old_tau.low, 25.0)
+    rs.custom_thresholds.r_ohm = Range(old_r.low, 60.0)
 
     # Simulate tab switch back: rehydrate
     out = _compute_rehydrate_outputs()
-    tau_idx = 7 + 4  # tau is 4th field (h, v, r, c, tau, via, sim)
-    r_idx = 7 + 2
-    assert abs(out[tau_idx] - 25.0) < 1e-9, f"tau={out[tau_idx]}"
-    assert abs(out[r_idx] - 60.0) < 1e-9, f"r={out[r_idx]}"
-    # Editable -> enabled
-    assert out[14] is False
+    # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
+    # [14..20]=low_vals, [21..27]=high_vals
+    # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
+    # r_ohm is the 3rd field (0-based 2): slider at 7+2=9, high at 21+2=23
+    assert abs(out[11][1] - 25.0) < 1e-9, f"tau high={out[11]}"
+    assert abs(out[25] - 25.0) < 1e-9, f"tau high={out[25]}"
+    assert abs(out[9][1] - 60.0) < 1e-9, f"r high={out[9]}"
+    assert abs(out[23] - 60.0) < 1e-9, f"r high={out[23]}"
+    # Editable -> inputs enabled (disabled flags at 28:42)
+    assert out[28] is False
 
 
 def test_apply_failure_does_not_touch_state():
     """Invalid apply values must NOT change routing_state.thresholds or custom_thresholds."""
     _reset()
     rs = routing_state
-    original_tau = rs.get_thresholds().max_tau_ps
+    original_tau = rs.get_thresholds().tau_ps.high
 
     rs.set_frozen_mode(False)
-    # Pass invalid h_ratio=0.3, v_ratio=0.3 -> sum < 1.0 -> validate fails
-    bad_values = (0.3, 0.3, 50.0, 20.0, 12.5, 0.8, 70.0)
+    # Pass invalid h_ratio.high=0.3, v_ratio.high=0.3 -> sum < 1.0 -> validate fails
+    # 14 values: (low, high) for h, v, r, c, tau, via, sim
+    bad_values = (0.0, 0.3, 0.0, 0.3, 0.0, 50.0, 0.0, 20.0,
+                  0.0, 12.5, 0.8, 1.0, 70.0, 100.0)
     try:
-        _handle_routing_preset_or_thresh(None, bad_values, "thresh-max_h_ratio")
+        _handle_routing_preset_or_thresh(None, bad_values, "input-h_ratio-high")
     except Exception:
         pass  # PreventUpdate or normal - both acceptable
 
     # State thresholds must be unchanged
-    assert abs(rs.get_thresholds().max_tau_ps - original_tau) < 1e-9
+    assert abs(rs.get_thresholds().tau_ps.high - original_tau) < 1e-9
