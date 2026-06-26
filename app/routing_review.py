@@ -76,17 +76,13 @@ def _make_card(label: str, value: str, sub: str = "",
     })
 
 
-def _build_threshold_source() -> html.Div:
+def _build_threshold_source(src: str = None) -> html.Div:
     """Build the prominent banner showing active threshold source (preset + Locked/Editable state)."""
-    src = routing_state.get_threshold_source()
+    if src is None:
+        src = routing_state.get_threshold_source()
     return html.Div([
         html.Span("Active Threshold Source: ", style={"fontSize": "11px", "fontWeight": "600"}),
-        html.Span(src, style={
-            "background": "rgba(5, 46, 22, 0.8)",
-            "padding": "2px 6px",
-            "borderRadius": "3px",
-            "fontSize": "10px",
-        }),
+        html.Span(src, style={"fontSize": "11px"}),
     ], style={"marginBottom": "8px"})
 
 
