@@ -48,3 +48,17 @@ def test_generate_routing_pptx_creates_file():
         generate_routing_pptx(s, app_s, out)
         assert os.path.exists(out)
         assert os.path.getsize(out) > 1000
+
+
+def test_pptx_cell_uses_in_or_notin_symbol():
+    from config.routing_thresholds import Range
+    from core import report_visualization as rv
+
+    rng = Range(0.0, 0.15)
+    h_text = rv.format_metric_cell(0.10, rng)
+    assert "\u2208" in h_text
+    assert "[0.0, 0.15]" in h_text
+
+    h_out = rv.format_metric_cell(0.22, rng)
+    assert "\u2209" in h_out
+    assert "[0.0, 0.15]" in h_out

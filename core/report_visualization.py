@@ -13,6 +13,18 @@ import plotly.graph_objects as go
 from core.layer_style import get_report_layer_color, is_via_layer
 
 
+def format_metric_cell(value, rng, fmt="{:.1f}"):
+    """Format a measurement with the appropriate symbol (\u2208 or \u2209).
+
+    Produces a string of the form ``"<formatted> \u2208 [\u03BBlow, high]"``
+    (or ``\u2209`` when the value is outside the closed interval). Used by
+    PPTX/HTML report cells so reviewers can see at a glance whether the
+    measured value lies within the active routing-thresholds Range.
+    """
+    symbol = "\u2208" if rng.contains(value) else "\u2209"
+    return f"{fmt.format(value)} {symbol} [{rng.low}, {rng.high}]"
+
+
 def get_layer_color(layer_name: str) -> str:
     """Get fill color for a layer."""
     return get_report_layer_color(layer_name)
