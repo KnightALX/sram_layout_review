@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>RC Calculation Paths Comparison</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eaeaea; padding: 20px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { color: #00d4ff; text-align: center; }
+    .flow { display: flex; justify-content: space-between; margin: 30px 0; }
+    .box { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 15px; width: 45%; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+    .box h3 { margin-top: 0; color: #00d4ff; border-bottom: 1px solid #0f3460; padding-bottom: 5px; }
+    .arrow { font-size: 24px; align-self: center; color: #e94560; }
+    .highlight { background: #0f3460; padding: 2px 4px; border-radius: 3px; }
+    .diff { color: #ff6b6b; font-weight: bold; }
+    ul { margin: 5px 0; padding-left: 20px; }
+    li { margin: 3px 0; }
+    .note { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 20px; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>RC Calculation: Layout View Properties vs Routing Review</h1>
+    
+    <div class="flow">
+      <div class="box">
+        <h3>Layout View → Properties (Trusted)</h3>
+        <ul>
+          <li>Upload → _rebuild_engine_from_nets()</li>
+          <li>engine.calculate_net_rc(net) → core.calculate_net_rc() <span class="highlight">(per-layer r_per_sq, c_per_um)</span></li>
+          <li>total_resistance, total_capacitance</li>
+          <li>tau_rc = ohm_ff_to_ps(R, C, "lumped")</li>
+          <li>Displayed: resistance, capacitance, <span class="diff">tau_rc</span>, tpd_50 (with driver/load)</li>
+        </ul>
+      </div>
+      
+      <div class="arrow">→</div>
+      
+      <div class="box">
+        <h3>Routing Review (Current)</h3>
+        <ul>
+          <li>Run Review → _run_routing_review()</li>
+          <li>compute_for_net(..., rc_model=None)</li>
+          <li>→ compute_net_metrics_with_tau() → calculate_net_rc() (same)</li>
+          <li>if not rc_model: tau_ps = ohm_ff_to_ps(totals, lumped)</li>
+          <li>Displayed: r_total, c_total, <span class="diff">effective_tau_ps</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Potential Differences:</strong><br>
+      • tau_rc vs effective_tau_ps (same formula now?)<br>
+      • tpd in properties has extra driver/load modeling — review does not<br>
+      • If custom_rc_model active in routing_state → overrides R/C/τ in review only<br>
+      • Vias handling or polygon splitting in split_metal_via_polygons()<br>
+      • Different layer_info fallback or tech_layers source
+    </div>
+
+    <p style="text-align:center; color:#888; font-size:12px;">This visual highlights where R/C/τ may diverge even if core calculate_net_rc is shared.</p>
+  </div>
+</body>
+</html>

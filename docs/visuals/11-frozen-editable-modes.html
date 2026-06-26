@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Frozen / Editable Modes - Mock</title>
+  <style>
+    body { font-family: sans-serif; background:#0f1117; color:#e2e8f0; padding:20px; }
+    .card { background:#171b24; border:1px solid #334155; border-radius:6px; padding:12px; margin:12px 0; }
+    .header { font-weight:600; margin-bottom:8px; }
+    .btn { padding:4px 10px; border-radius:4px; margin:2px; cursor:pointer; }
+    .locked { background:#1e3a8a; color:white; }
+    .editable { background:#166534; color:white; }
+    .input { background:#1f2533; border:1px solid #475569; padding:3px; width:70px; margin:2px; }
+    .disabled { opacity:0.6; }
+    .note { font-size:11px; color:#94a3b8; }
+  </style>
+</head>
+<body>
+  <h2>Routing Config - Frozen / Editable Modes (Proposed)</h2>
+
+  <div class="card">
+    <div class="header">Preset + Mode</div>
+    <select>
+      <option>sram_7nm_wl</option>
+      <option>sram_5nm_io_bl</option>
+    </select>
+    <button class="btn locked">Locked (Frozen)</button>
+    <button class="btn editable">Editable</button>
+    <div class="note">默认 Locked：所有输入禁用，严格用模板值。切换 Preset 立即生效。</div>
+  </div>
+
+  <div class="card">
+    <div class="header">Thresholds (Locked)</div>
+    <div>Max H Ratio: <input class="input disabled" value="0.15" disabled></div>
+    <div>Max V Ratio: <input class="input disabled" value="1.0" disabled></div>
+    <div>Max R: <input class="input disabled" value="100" disabled></div>
+    ... (其他字段禁用)
+    <button>Apply Thresholds</button>
+    <div class="note">Apply 按钮可灰显或提示 "Locked mode - no edit"</div>
+  </div>
+
+  <div class="card">
+    <div class="header">Thresholds (Editable)</div>
+    <div>Max H Ratio: <input class="input" value="0.22"></div>
+    <div>Max V Ratio: <input class="input" value="1.0"></div>
+    <div>Max R: <input class="input" value="120"></div>
+    ...
+    <button>Apply Thresholds</button>
+    <div class="note">修改后显示 unsaved badge，Apply 后 custom 生效，Review 使用新值</div>
+  </div>
+
+  <p style="font-size:11px;color:#64748b;">此 mock 用于讨论冻结/可编辑 + Apply 持久化</p>
+</body>
+</html>

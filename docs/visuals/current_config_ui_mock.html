@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Routing Config Current UI (Mock)</title>
+  <style>
+    body { font-family: sans-serif; background: #0f1117; color: #e2e8f0; padding: 20px; }
+    .card { background: #171b24; border: 1px solid #334155; border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+    .header { font-weight: 600; margin-bottom: 8px; }
+    .input { background: #1f2533; border: 1px solid #475569; padding: 4px; border-radius: 3px; width: 80px; margin-right: 8px; }
+    .red { color: #f87171; }
+    button { background: #1e40af; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+    .note { font-size: 12px; color: #94a3b8; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h2>Routing Config Tab - 当前问题模拟</h2>
+  
+  <div class="card">
+    <div class="header">Preset</div>
+    <select>
+      <option>sram_7nm_wl</option>
+    </select>
+    <div class="note">切换Preset后，手动修改值，Apply，然后切tab回来，值可能重置或显示红色</div>
+  </div>
+
+  <div class="card">
+    <div class="header">Routing Thresholds</div>
+    <div>
+      Max H Ratio: <input class="input" value="0.15"> 
+      <span class="red">(有时红色?)</span>
+    </div>
+    <div>
+      Max V Ratio: <input class="input" value="1.0">
+    </div>
+    <div>
+      Max Total R (Ω): <input class="input" value="100">
+    </div>
+    ... (其他字段)
+    <div style="margin-top:8px;">
+      <button>✓ Apply Thresholds</button>
+      <span class="note">Apply后，切tab回来经常失效</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="header">Proposed: Freeze / Editable</div>
+    <button style="background:#166534">Locked (Frozen)</button>
+    <button style="background:#1e40af">Editable</button>
+    <div class="note">冻结时输入禁用，严格用Preset；可编辑时可改，必须Apply才生效。切tab回来值保留。</div>
+  </div>
+
+  <p style="font-size:11px; color:#64748b;">此mock用于讨论当前apply无效和红色问题 + 冻结/可编辑提案</p>
+</body>
+</html>

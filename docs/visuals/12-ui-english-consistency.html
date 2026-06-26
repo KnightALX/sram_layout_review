@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>UI English Consistency - Mock</title>
+  <style>
+    body { font-family: sans-serif; background:#0f1117; color:#e2e8f0; padding:20px; }
+    .card { background:#171b24; border:1px solid #334155; border-radius:6px; padding:12px; margin:12px 0; }
+    .header { font-weight:600; margin-bottom:8px; }
+    button { background:#1e40af; color:white; border:none; padding:6px 12px; border-radius:4px; margin:2px; }
+    .note { font-size:11px; color:#94a3b8; }
+  </style>
+</head>
+<body>
+  <h2>Dash UI - English Only (Proposed)</h2>
+
+  <div class="card">
+    <div class="header">Routing Config</div>
+    <button>Locked</button>
+    <button>Editable</button>
+    <button>Apply Thresholds</button>
+    <div>Max H Ratio: <input value="0.15"></div>
+    <div class="note">All labels, buttons, status: "Active Threshold Source: Locked preset: sram_7nm_wl"</div>
+  </div>
+
+  <div class="card">
+    <div class="header">Routing Review</div>
+    <div>Active Threshold Source: Locked preset: sram_7nm_wl</div>
+    <button>Dismiss</button>
+    <button>Generate Routing Report (PPTX)</button>
+    <div class="note">No Chinese anywhere. Consistent button style, English only.</div>
+  </div>
+
+  <p style="font-size:11px;color:#64748b;">Ensure no Chinese in any UI text, use professional English.</p>
+</body>
+</html>
