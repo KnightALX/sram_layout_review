@@ -11,16 +11,56 @@ was performed on the config side; review code was already compliant.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from dash import dash_table, dcc, html
 from dash.exceptions import PreventUpdate
 
 from app.routing_state import routing_state
 from app.state import app_state  # for accessing loaded nets/polygons
+from config.routing_thresholds import Range, RoutingThresholds
 from core.routing_metrics import compute_for_net, split_metal_via_polygons
 from core.routing_violation import RoutingViolation
 from core.visualization import create_directional_figure
+
+# Mapping from RoutingThresholds field name to the per-net table column_id.
+FIELD_TO_COLUMN = {
+    "h_ratio": "H %", "v_ratio": "V %", "r_ohm": "R (\u03a9)",
+    "c_ff": "C (fF)", "tau_ps": "\u03c4 (ps)",
+    "via_coverage": "Via Cov", "similarity": "Sim",
+}
+
+# Mapping from threshold field name to the metrics dict key.
+_FIELD_TO_METRIC_KEY = {
+    "h_ratio": "h_ratio", "v_ratio": "v_ratio", "r_ohm": "r_total",
+    "c_ff": "c_total", "tau_ps": "effective_tau_ps",
+    "via_coverage": "via_coverage", "similarity": "similarity_score",
+}
+
+
+def _format_cell(value, rng: Range, fmt="{:.1f}") -> str:
+    """Format a measurement with the appropriate symbol (\u2208 or \u2209)."""
+    symbol = "\u2208" if rng.contains(value) else "\u2209"
+    # Bounds use natural float repr to preserve precision (e.g. 0.15 not 0.1).
+    return f"{fmt.format(value)} {symbol} [{rng.low}, {rng.high}]"
+
+
+def _build_cell_violation_map(batch_results: Dict[str, Dict[str, Any]],
+                              thresholds: RoutingThresholds) -> Dict[str, Set[str]]:
+    """Return {net_name: {column_id, ...}} for cells whose metric is out of range."""
+    cell_map: Dict[str, Set[str]] = {}
+    for name, m in batch_results.items():
+        if m.get("status") == "no_data":
+            continue
+        bad: Set[str] = set()
+        for field, col in FIELD_TO_COLUMN.items():
+            rng = getattr(thresholds, field)
+            measured = m.get(_FIELD_TO_METRIC_KEY[field])
+            if measured is not None and not rng.contains(measured):
+                bad.add(col)
+        if bad:
+            cell_map[name] = bad
+    return cell_map
 
 _ERROR_BANNER_HIDDEN = {
     "display": "none",
