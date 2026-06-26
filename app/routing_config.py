@@ -233,10 +233,18 @@ def _render_state(thresh_input_values: list) -> tuple:
     preset_status = html.Span(source, style={"color": "#888", "fontSize": "11px"})
 
     if routing_state.last_error:
-        config_status = html.Span(
-            f"Error: {routing_state.last_error}",
-            style={"fontSize": "11px", "color": "#C0392B"},
-        )
+        err = routing_state.last_error
+        if err and ("Blocked" in err or "Preset switch" in err or "Edit Mode" in err):
+            # Use orange (like unsaved) for preset block warning (step 6 confirmation)
+            config_status = html.Span(
+                err,
+                style={"fontSize": "11px", "color": "#E67E22"},
+            )
+        else:
+            config_status = html.Span(
+                f"Error: {err}",
+                style={"fontSize": "11px", "color": "#C0392B"},
+            )
     elif routing_state.last_status:
         config_status = html.Span(
             routing_state.last_status,
@@ -291,8 +299,12 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
             routing_state.custom_thresholds = None  # preset switch in frozen discards prior draft
             routing_state.last_error = None
             routing_state.last_status = ""
-        # else: editable mode blocks preset change; render_state will
-        # echo back state.current_preset to bounce the dropdown.
+        else:
+            # editable: block with warning (simple status + prevent by not mutating);
+            # render will bounce the preset value and surface the message.
+            if new_preset and new_preset != routing_state.current_preset:
+                routing_state.last_error = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
+                routing_state.last_status = ""
         return
 
     if trigger_id == "mode-frozen.n_clicks":
