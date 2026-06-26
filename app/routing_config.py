@@ -8,6 +8,12 @@ Reads available nets from `app.state.app_state.nets_data` (populated by the
 Layout View tab's upload callbacks). Surfacing this connection in the UI is
 critical — without it, the user has no way to know what nets exist or whether
 their regex matches anything.
+
+Task 7 hygiene: threshold *reads* are centralized. All code in this file
+(and routing_review) obtains active thresholds exclusively via
+routing_state.get_thresholds() and reads mode via the is_frozen attribute.
+(get_thresholds is the single source of truth for values; internal writes to
+the backing fields are only for preset load / set_custom paths.)
 """
 from __future__ import annotations
 
@@ -38,7 +44,10 @@ def _handle_routing_preset_or_thresh(
     (mirrors production). Callers in tests should reset state.
     """
     n_fields = len(THRESHOLD_FIELDS)
-    frozen = routing_state.is_frozen
+    # Centralized reads (Task 7 Step 1)
+    is_frozen = routing_state.is_frozen
+    frozen = is_frozen
+    thresholds = routing_state.get_thresholds()
     dis_list = _disabled_list(frozen, n_fields)
     f_cls, e_cls = _mode_button_classes(frozen)
 
@@ -53,7 +62,7 @@ def _handle_routing_preset_or_thresh(
 
         if not frozen:
             curr_p = routing_state.current_preset
-            curr_thr = routing_state.get_thresholds()
+            curr_thr = thresholds  # from centralized get_thresholds() above
             curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
             warn = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
             dis_ed = _disabled_list(False, n_fields)
@@ -91,6 +100,7 @@ def _handle_routing_preset_or_thresh(
             return tuple([f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset] + curr_vals + dis_list)
 
     # Manual thresh edit path (no side effect on state)
+    # Centralized threshold read via get_thresholds() (Task 7 Step 1)
     current = routing_state.get_thresholds()
     current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
 
@@ -192,6 +202,7 @@ def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], 
     Full red/invalid only surfaces for *real differing* bad values on Apply.
     Live keystrokes never call this (no revert); only Apply path does.
     """
+    # Centralized threshold read via get_thresholds() (Task 7 Step 1)
     current = routing_state.get_thresholds()
     current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
     tentative_dict = current.to_dict()
@@ -258,9 +269,12 @@ def _render_state(thresh_input_values: list) -> tuple:
     `thresh_input_values` is the list of 7 values currently in the inputs;
     used to detect unsaved changes.
     """
-    thr = routing_state.get_thresholds()
+    # Centralized threshold reads (Task 7 Step 1)
+    thresholds = routing_state.get_thresholds()
+    thr = thresholds
     vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-    frozen = routing_state.is_frozen
+    is_frozen = routing_state.is_frozen
+    frozen = is_frozen
     f_cls, e_cls = _mode_button_classes(frozen)
     dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
 
@@ -344,6 +358,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
 
     if trigger_id == "routing-preset.value":
         new_preset = trigger_value
+        # Centralized is_frozen read (Task 7)
         if routing_state.is_frozen:
             routing_state.current_preset = new_preset
             routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
@@ -401,9 +416,12 @@ def _compute_rehydrate_outputs():
     Clears transient badges on re-entry for clean re-hydration while restoring
     authoritative values + mode + disabled from routing_state.
     """
-    thr = routing_state.get_thresholds()
+    # Centralized threshold reads (Task 7 Step 1)
+    thresholds = routing_state.get_thresholds()
+    thr = thresholds
     vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
-    frozen = routing_state.is_frozen
+    is_frozen = routing_state.is_frozen
+    frozen = is_frozen
     f_cls, e_cls = _mode_button_classes(frozen)
     dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
     # On tab re-activation: reflect current preset/mode/values, clear transient messages.
@@ -532,8 +550,11 @@ def _run_and_status() -> str:
 def create_routing_config_tab():
     """Build the routing Configuration tab content (Dash components only)."""
     preset = routing_state.current_preset
-    thr = routing_state.get_thresholds()
-    f_cls, e_cls = _mode_button_classes(routing_state.is_frozen)
+    # Centralized reads (Task 7 Step 1)
+    thresholds = routing_state.get_thresholds()
+    thr = thresholds
+    is_frozen = routing_state.is_frozen
+    f_cls, e_cls = _mode_button_classes(is_frozen)
 
     nets = sorted(app_state.nets_data.keys())
     first_net = nets[0] if nets else ""
@@ -587,7 +608,7 @@ def create_routing_config_tab():
                             type="number",
                             value=getattr(thr, name),
                             min=mn, max=mx, step=st,
-                            disabled=routing_state.is_frozen,
+                            disabled=is_frozen,  # centralized read above
                             className="input-field",
                         ),
                     ], className="form-group")

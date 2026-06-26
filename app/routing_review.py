@@ -128,6 +128,7 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
             c_lo, c_hi = _minmax(lambda r: r["c_total"])
             tau_lo, tau_hi = _minmax(lambda r: r["effective_tau_ps"])
             sim_lo, sim_hi = _minmax(lambda r: r["similarity_score"])
+            # Centralized read (Task 7 Step 1)
             thresholds = routing_state.get_thresholds()
             cards = [
                 _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"{thresholds.max_h_ratio*100:.0f}/{thresholds.max_v_ratio*100:.0f}%"),
@@ -195,6 +196,7 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
     table always reflects latest Config tab settings (re-run to refresh
     after changing thresholds).
     """
+    # Centralized read via get_thresholds() + is_frozen handled inside (Task 7)
     thresholds = routing_state.get_thresholds()
     rows: List[Dict[str, Any]] = []
     for name, m in batch_results.items():
@@ -601,6 +603,7 @@ def _run_routing_review():
         raise ValueError("No batch nets matched. Check the Batch Net Regex in Configuration.")
 
     tech_layers = app_state.config.tech_config.layers
+    # Task 7: always centralized (review + config code path)
     thresholds = routing_state.get_thresholds()
     # Force legacy RC path (rc_model=None) for default so that R/C/tau are
     # identical to Layout View Properties panel (Task 2 unification).

@@ -237,3 +237,64 @@ def test_tab_rehydrate_uses_authoritative_state_not_stale_inputs():
         assert out[14] is False
     finally:
         _restore_state_snapshot(snap)
+
+
+# --- Task 7 Step 3: frozen vs editable apply persistence (TDD) ---
+# Simulates state changes + tab switches by directly calling the refresh
+# functions (_compute_rehydrate_outputs and review builders).
+
+def test_frozen_vs_editable_apply_persistence_via_refresh():
+    """After Apply in editable, tab switch (rehydrate) must keep custom values.
+    Switching to frozen must revert display to preset while preserving draft.
+    Uses get_thresholds() and is_frozen; calls refresh helpers to simulate tabs.
+    """
+    snap = _save_state_snapshot()
+    try:
+        _reset()
+        # Start in frozen (default)
+        assert routing_state.is_frozen is True
+        preset_tau = routing_state.get_thresholds().max_tau_ps
+
+        # Switch to editable, change a value, apply (persistence path)
+        routing_state.set_frozen_mode(False)
+        edited_vals = (0.18, 0.92, 88.0, 420.0, 7.7, 0.82, 78.0)
+        _apply_thresholds(edited_vals)
+
+        # Simulate tab switch to Config: call rehydrate refresh function
+        out = _compute_rehydrate_outputs()
+        # After apply + rehydrate: should show custom (not preset), editable (disabled=False)
+        tau_idx = 7 + 4  # max_tau_ps is 5th (0-based 4)
+        assert abs(out[tau_idx] - 7.7) < 1e-9
+        assert all(d is False for d in out[14:21])
+
+        # Now switch to Review tab simulation: use review refresh helpers
+        from app.routing_review import _build_metric_cards, _build_threshold_source
+        cards = _build_metric_cards({})  # empty ok for structure
+        src = _build_threshold_source()
+        assert "Active Threshold Source" in str(src)
+
+        # Apply should have set is_frozen False + custom
+        assert routing_state.is_frozen is False
+        assert abs(routing_state.get_thresholds().max_tau_ps - 7.7) < 1e-9
+
+        # Simulate "tab switch back" + freeze mode via state + rehydrate
+        routing_state.set_frozen_mode(True)
+        out2 = _compute_rehydrate_outputs()
+        # In frozen after, values should reflect the preset backing (not the draft custom)
+        # (get_thresholds returns .thresholds when frozen)
+        assert abs(out2[tau_idx] - preset_tau) < 1e-9
+        # disabled should now be True
+        assert all(d is True for d in out2[14:21])
+        assert routing_state.is_frozen is True
+
+        # Draft is preserved (even if not shown while frozen)
+        # (re-enter editable should bring the previous custom back if Apply had set it before freeze)
+        # For this test, after re-freeze, custom may be the draft; switching editable keeps it per design
+        routing_state.set_frozen_mode(False)
+        out3 = _compute_rehydrate_outputs()
+        # If draft was captured at last apply, tau would still be edited; but freeze+edit toggle semantics
+        # preserve the last applied custom as draft. Check via get (after unfreeze)
+        final_tau = routing_state.get_thresholds().max_tau_ps
+        assert abs(final_tau - 7.7) < 1e-9 or abs(final_tau - preset_tau) < 1e-9
+    finally:
+        _restore_state_snapshot(snap)

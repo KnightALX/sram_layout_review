@@ -319,7 +319,7 @@ def test_rc_values_match_between_properties_and_routing_review():
 
     # Routing Review path: same net data -> compute_for_net (rc_model=None default)
     tech = app_state.config.tech_config.layers
-    thresholds = routing_state.get_thresholds()  # authoritative via public helper
+    thresholds = routing_state.get_thresholds()  # authoritative via public helper (Task 7)
     metals, vias = split_metal_via_polygons(polygons)
     m = compute_for_net(net_id, metals, vias, tech, thresholds, golden_metrics=None, rc_model=None)
 
