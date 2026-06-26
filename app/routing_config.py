@@ -34,126 +34,58 @@ from config.routing_thresholds import RoutingThresholds
 # a full Dash app or inner-callback extraction). Not part of public API surface.
 def _handle_routing_preset_or_thresh(
     preset: Optional[str],
-    thresh_values: tuple,
+    range_values,
     trigger: Optional[str],
 ) -> tuple:
-    """Testable core logic extracted from the large update callback.
+    """Testable core logic for preset/apply handling.
 
-    Returns the tuple of output values in the same order as the callback
-    (so tests can assert on classes, statuses, values, disabled).
-    Side effects on routing_state are performed for preset/apply-like paths
-    (mirrors production). Callers in tests should reset state.
+    `range_values` is a 14-tuple of (low_0, high_0, ..., low_6, high_6).
+    Returns the 41-element output tuple.
     """
-    n_fields = len(THRESHOLD_FIELDS)
-    # Centralized reads (Task 7 Step 1)
+    n = len(RANGE_FIELDS)
     is_frozen = routing_state.is_frozen
-    frozen = is_frozen  # Locked when True (matches button)
     thresholds = routing_state.get_thresholds()
-    dis_list = _disabled_list(frozen, n_fields)
-    f_cls, e_cls = _mode_button_classes(frozen)
+    f_cls, e_cls = _mode_button_classes(is_frozen)
+    dis_list = [is_frozen] * (2 * n)
+    slider_vals = [[getattr(thresholds, fld["name"]).low,
+                    getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
+    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
+    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
 
-    # Preset switch path
     if trigger == "routing-preset" and preset:
         if preset == routing_state.current_preset:
-            # no-op guard (see improved revert logic)
-            # For direct test call, we simulate by returning a sentinel.
-            # Real cb raises PreventUpdate; here we raise for consistency in mocks.
             from dash.exceptions import PreventUpdate
             raise PreventUpdate
-
-        if not frozen:
+        if not is_frozen:
             curr_p = routing_state.current_preset
-            curr_thr = thresholds  # from centralized get_thresholds() above
-            curr_vals = [getattr(curr_thr, name) for name, *_ in THRESHOLD_FIELDS]
-            warn = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
-            dis_ed = _disabled_list(False, n_fields)
+            warn = ("Edit Mode: Preset switch Blocked (unsaved changes). "
+                    "Please click Apply or switch to Locked first.")
+            dis_ed = [False] * (2 * n)
             f_ed, e_ed = _mode_button_classes(False)
-            return tuple([
-                f_ed, e_ed,
-                f"Loaded: {curr_p}",
-                warn,
-                html.Span("● unsaved changes", style={
-                    "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-                "",
-                curr_p,
-            ] + curr_vals + dis_ed)
-
-        # Locked (frozen) load
+            return tuple([f_ed, e_ed, f"Loaded: {curr_p}", warn,
+                          html.Span("\u25cf unsaved changes",
+                                    style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
+                          "", curr_p]
+                         + slider_vals + low_vals + high_vals + dis_ed)
         try:
-            from config.routing_thresholds import _BUILTIN_PRESETS
-            if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
-                t = RoutingThresholds.for_preset(preset)
-            else:
-                from config.preset_loader import load_preset_yaml as _load  # local alias
-                t = _load(preset)
+            t = RoutingThresholds.for_preset(preset)
             routing_state.current_preset = preset
-            # Base preset load (Locked/frozen path): direct set to the backing preset field.
-            # Value reads always go through get_thresholds() which is authoritative on is_frozen.
             routing_state.thresholds = t
-            routing_state.set_frozen_mode(True)  # ensures is_frozen (Locked); custom draft preserved by set_frozen_mode but ignored by get while Locked
+            routing_state.set_frozen_mode(True)
             status = f"Loaded preset: {preset}"
-            thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
-            dis_f = _disabled_list(True, n_fields)
+            new_slider = [[getattr(t, fld["name"]).low,
+                           getattr(t, fld["name"]).high] for fld in RANGE_FIELDS]
+            new_low = [getattr(t, fld["name"]).low for fld in RANGE_FIELDS]
+            new_high = [getattr(t, fld["name"]).high for fld in RANGE_FIELDS]
+            dis_f = [True] * (2 * n)
             f_f, e_f = _mode_button_classes(True)
-            return tuple([f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset] + thresh_outputs + dis_f)
+            return tuple([f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset]
+                         + new_slider + new_low + new_high + dis_f)
         except Exception as e:
-            curr_vals = list(thresh_values) if thresh_values else [getattr(routing_state.get_thresholds(), name) for name, *_ in THRESHOLD_FIELDS]
-            return tuple([f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset] + curr_vals + dis_list)
+            return tuple([f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset]
+                         + slider_vals + low_vals + high_vals + dis_list)
 
-    # Manual thresh edit path (no side effect on state)
-    # Centralized threshold read via get_thresholds() (Task 7 Step 1)
-    current = routing_state.get_thresholds()
-    current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
-
-    # Task 5 Step 3: guard red/invalid + unsaved logic with "user_modified" check
-    # against last-known-good (the authoritative current values from state).
-    # This prevents showing red font or "unsaved" on initial load / re-sync
-    # of a perfectly valid preset. Only treat as a modifying user action when an
-    # input value actually differs from the last good value.
-    user_modified = False
-    for i, (name, *_) in enumerate(THRESHOLD_FIELDS):
-        v = thresh_values[i] if i < len(thresh_values) else None
-        if v is not None:
-            try:
-                if abs(float(v) - float(current_vals[i])) > 1e-9:
-                    user_modified = True
-                    break
-            except Exception:
-                user_modified = True
-                break
-
-    if not user_modified:
-        # Not a real edit — e.g. values just re-populated after preset load or
-        # tab re-hydration. Emit clean state, no unsaved badge, no red error.
-        from dash import no_update as _no_update
-        return tuple([
-            f_cls, e_cls,
-            f"Loaded: {routing_state.current_preset}",
-            "",
-            html.Span("", style={"display": "none"}),
-            "",
-            _no_update,
-        ] + current_vals + dis_list)
-
-    # Real user modification path (Task 6 cleanup): show unsaved cues ONLY.
-    # Do NOT revert value on keystroke. Intermediate/partial input kept via
-    # no_update. Full validation only on Apply (see _validate_apply + main cb).
-    # Browser-native red avoided by wide min/max in THRESHOLD_FIELDS (updated in Step 3).
-    dis_editable = _disabled_list(False, n_fields)
-    from dash import no_update as _no_update
-    # Return no_update for the 7 thresh value outputs so live typing is not
-    # overwritten (main production callback does equivalent suppression now).
-    thresh_value_slots = [_no_update] * n_fields
-    return tuple([
-        f_cls, e_cls,
-        f"Loaded: {routing_state.current_preset}",
-        "",
-        html.Span("● unsaved changes", style={
-            "fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
-        html.Span("Thresholds modified — click Apply to save.",
-                  style={"fontSize": "10px", "color": "#E67E22"}),
-        _no_update,
-    ] + thresh_value_slots + dis_editable)
+    return _render_state(list(range_values))
 
 # REMOVED: THRESHOLD_FIELDS replaced by RANGE_FIELDS below (Task 14-20 will
 # migrate the remaining references in this module).
@@ -216,6 +148,21 @@ def _build_range_input_group(field):
     ], className="form-group", style={"marginBottom": "12px"})
 
 
+def _sync_slider_to_input(value):
+    """Slider -> Inputs: simply unpack the [low, high] list."""
+    return value[0], value[1]
+
+
+def _sync_input_to_slider(low, high):
+    """Inputs -> Slider. Returns [low, high] or None to signal PreventUpdate."""
+    from dash.exceptions import PreventUpdate
+    if low is None or high is None:
+        raise PreventUpdate
+    if low > high:
+        raise PreventUpdate
+    return [low, high]
+
+
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
     """Pure helper: return (locked_button_class, editable_button_class).
 
@@ -236,41 +183,31 @@ def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
     return [frozen] * n_fields
 
 
-def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], Optional[str]]:
-    """Validate 7 threshold input values for Apply.
+def _validate_apply(range_values):
+    """Validate 14 (low, high) values for Apply.
 
     Returns:
         (valid_thresholds, None) on success
         (None, error_message) on failure
-
-    A `None` value in thresh_values means "use the current state value" (the
-    input was empty). It does NOT mean invalid.
-
-    Task 5 Step 3 + Task 6: Guard with user_modified check against last-known-good.
-    Full red/invalid only surfaces for *real differing* bad values on Apply.
-    Live keystrokes never call this (no revert); only Apply path does.
     """
-    # Centralized threshold read via get_thresholds() (Task 7 Step 1)
+    n = len(RANGE_FIELDS)
+    if len(range_values) != 2 * n:
+        return None, f"Expected {2 * n} values, got {len(range_values)}"
+
     current = routing_state.get_thresholds()
-    current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
     tentative_dict = current.to_dict()
 
-    user_modified = False
-    for i, (name, *_) in enumerate(THRESHOLD_FIELDS):
-        val = thresh_values[i] if i < len(thresh_values) else None
-        if val is not None:
-            try:
-                if abs(float(val) - float(current_vals[i])) > 1e-9:
-                    user_modified = True
-            except Exception:
-                user_modified = True
-            tentative_dict[name] = val
-
-    if not user_modified:
-        # Values match last known good (or were all None). This is not a
-        # modifying action that can be the "cause of failure".
-        # Return the known-good thresholds; never surface red for this.
-        return current, None
+    try:
+        for i, field in enumerate(RANGE_FIELDS):
+            name = field["name"]
+            low = range_values[2 * i]
+            high = range_values[2 * i + 1]
+            if low is None or high is None:
+                continue
+            low_f, high_f = float(low), float(high)
+            tentative_dict[name] = {"low": low_f, "high": high_f}
+    except (TypeError, ValueError) as e:
+        return None, f"Invalid number: {e}"
 
     try:
         tentative = RoutingThresholds.from_dict(tentative_dict)
@@ -280,65 +217,56 @@ def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], 
     return tentative, None
 
 
-def _apply_thresholds(thresh_values: tuple) -> None:
-    """Apply the (possibly edited) threshold values from the UI inputs.
-
-    Task 5 Step 2: Always update state on successful Apply and clear badges.
-    Sets is_frozen based on mode: after Apply we adopt the values as custom
-    and switch to (or remain in) editable mode (is_frozen=False).
-    """
-    valid, err = _validate_apply(thresh_values)
+def _apply_thresholds(range_values):
+    valid, err = _validate_apply(range_values)
     if valid is None:
         routing_state.last_error = err
     else:
-        # Commit the values and set is_frozen=False (Editable / applied mode)
         routing_state.set_custom(valid)
         routing_state.last_error = None
-    # Apply represents a config change — clear prior review status so it
-    # does not linger, and ensure unsaved/apply badges will be cleared on
-    # the subsequent render (since authoritative now matches applied values).
     routing_state.last_status = ""
 
 
-def _render_state(thresh_input_values: list) -> tuple:
-    """Project routing_state to 21 UI outputs.
+def _render_state(range_input_values):
+    """Project routing_state to UI outputs (41-element tuple).
 
-    Output tuple order (matches the single callback's Output list):
-      [0]  mode-frozen className
-      [1]  mode-editable className
-      [2]  routing-preset-status children
-      [3]  routing-config-status children
-      [4]  thresh-unsaved-badge children
-      [5]  thresh-apply-status children
-      [6]  routing-preset value
-      [7..13] 7 thresh-{name} values
-      [14..20] 7 thresh-{name} disabled flags
-
-    `thresh_input_values` is the list of 7 values currently in the inputs;
-    used to detect unsaved changes.
+    Output tuple order:
+      [0]   mode-frozen className
+      [1]   mode-editable className
+      [2]   routing-preset-status children
+      [3]   routing-config-status children
+      [4]   thresh-unsaved-badge children
+      [5]   thresh-apply-status children
+      [6]   routing-preset value
+      [7..13]  7 slider-{name} values (each [low, high])
+      [14..20] 7 input-{name}-low values
+      [21..27] 7 input-{name}-high values
+      [28..34] 7 input-{name}-low disabled
+      [35..41] 7 input-{name}-high disabled
     """
-    # Centralized threshold reads (Task 7 Step 1)
     thresholds = routing_state.get_thresholds()
-    thr = thresholds
-    vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
     is_frozen = routing_state.is_frozen
-    frozen = is_frozen
-    f_cls, e_cls = _mode_button_classes(frozen)
-    dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
+    f_cls, e_cls = _mode_button_classes(is_frozen)
+    n = len(RANGE_FIELDS)
+    slider_vals = [[getattr(thresholds, fld["name"]).low,
+                    getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
+    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
+    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
+    dis_list = [is_frozen] * (2 * n)
 
-    # detect unsaved changes (only meaningful in editable mode)
-    # Task 5/6: tolerant diff check vs last-known-good. Note: during live
-    # keystroke the caller suppresses value outputs, but diff detection
-    # (using passed thresh_input_values) still correctly decides badge/status.
     def _vals_differ(a, b):
         try:
             return abs(float(a) - float(b)) > 1e-9
         except Exception:
             return a != b
+
     has_unsaved = False
-    if not frozen:  # Editable mode
-        for iv, sv in zip(thresh_input_values, vals):
-            if _vals_differ(iv, sv):
+    if not is_frozen and len(range_input_values) == 2 * n:
+        for i, fld in enumerate(RANGE_FIELDS):
+            if _vals_differ(range_input_values[2 * i], low_vals[i]):
+                has_unsaved = True
+                break
+            if _vals_differ(range_input_values[2 * i + 1], high_vals[i]):
                 has_unsaved = True
                 break
 
@@ -348,87 +276,53 @@ def _render_state(thresh_input_values: list) -> tuple:
     if routing_state.last_error:
         err = routing_state.last_error
         if err and ("Blocked" in err or "Preset switch" in err or "Edit Mode" in err):
-            # Use orange (like unsaved) for preset block warning (step 6 confirmation)
-            config_status = html.Span(
-                err,
-                style={"fontSize": "11px", "color": "#E67E22"},
-            )
+            config_status = html.Span(err, style={"fontSize": "11px", "color": "#E67E22"})
         else:
-            config_status = html.Span(
-                f"Error: {err}",
-                style={"fontSize": "11px", "color": "#C0392B"},
-            )
+            config_status = html.Span(f"Error: {err}", style={"fontSize": "11px", "color": "#C0392B"})
     elif routing_state.last_status:
-        config_status = html.Span(
-            routing_state.last_status,
-            style={"fontSize": "11px", "color": "#2C7A2C"},
-        )
+        config_status = html.Span(routing_state.last_status, style={"fontSize": "11px", "color": "#2C7A2C"})
     else:
         config_status = ""
 
     if has_unsaved:
-        unsaved_badge = html.Span(
-            "Unsaved Changes",
-            style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"},
-        )
-        apply_status = html.Span(
-            "Thresholds modified - click Apply to save.",
-            style={"fontSize": "11px", "color": "#E67E22"},
-        )
+        unsaved_badge = html.Span("Unsaved Changes", style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"})
+        apply_status = html.Span("Thresholds modified - click Apply to save.", style={"fontSize": "11px", "color": "#E67E22"})
     else:
         unsaved_badge = html.Span("", style={"display": "none"})
         apply_status = ""
 
     return tuple([
         f_cls, e_cls,
-        preset_status,
-        config_status,
-        unsaved_badge,
-        apply_status,
+        preset_status, config_status, unsaved_badge, apply_status,
         routing_state.current_preset,
-    ] + vals + dis_list)
+    ] + slider_vals + low_vals + high_vals + dis_list)
 
 
-def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
-    """Mutate routing_state based on which input triggered the callback.
-
-    trigger_id: e.g. "routing-preset.value", "mode-frozen.n_clicks",
-                "btn-apply-thresholds.n_clicks", "thresh-max_tau_ps.value",
-                "tabs.value", or None for initial render.
-    trigger_value: the value associated with the trigger (preset name,
-                   n_clicks count, thresh input value, tab id).
-    thresh_values: tuple of 7 current thresh input values (only meaningful
-                   for the Apply trigger).
-    """
+def _dispatch_action(trigger_id, trigger_value, range_values):
+    """Handle non-typing triggers (preset, mode, apply, tabs)."""
     if trigger_id is None:
-        # Initial render: nothing to do; state is already set.
         return
-
     if trigger_id == "routing-preset.value":
         new_preset = trigger_value
-        # Centralized is_frozen read (Task 7); True == Locked mode
         if routing_state.is_frozen:
             routing_state.current_preset = new_preset
             routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
-            routing_state.custom_thresholds = None  # preset switch in frozen discards prior draft
+            routing_state.custom_thresholds = None
             routing_state.last_error = None
             routing_state.last_status = ""
         else:
-            # Editable: block with warning (simple status + prevent by not mutating);
-            # render will bounce the preset value and surface the message.
             if new_preset and new_preset != routing_state.current_preset:
-                routing_state.last_error = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
+                routing_state.last_error = ("Edit Mode: Preset switch Blocked (unsaved changes). "
+                                            "Please click Apply or switch to Locked first.")
                 routing_state.last_status = ""
         return
-
     if trigger_id == "mode-frozen.n_clicks":
-        routing_state.set_frozen_mode(True)  # Locked: preserves any custom draft (get_thresholds respects is_frozen)
+        routing_state.set_frozen_mode(True)
         routing_state.last_error = None
         routing_state.last_status = ""
         return
-
     if trigger_id == "mode-editable.n_clicks":
-        routing_state.set_frozen_mode(False)  # switch to Editable
+        routing_state.set_frozen_mode(False)
         if routing_state.custom_thresholds is None:
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.get_thresholds().to_dict()
@@ -436,43 +330,36 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         routing_state.last_error = None
         routing_state.last_status = ""
         return
-
     if trigger_id == "btn-apply-thresholds.n_clicks":
-        # Task 5 Step 2: delegate to _apply_thresholds (ensures state update +
-        # is_frozen set based on applied/editable mode + badges cleared).
-        _apply_thresholds(thresh_values)
+        _apply_thresholds(tuple(range_values))
         return
-
-    if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
-        # User typing in a thresh input: no state mutation.
-        # _render_state will detect the diff and show the unsaved badge.
+    if trigger_id and trigger_id.startswith("input-") and trigger_id.endswith(".value"):
         return
-
     if trigger_id == "tabs.value":
-        # Tab switch: nothing to mutate; just re-render.
         return
 
 
 def _compute_rehydrate_outputs():
-    """Return the full tuple of outputs to re-populate Routing Config controls from state.
+    """Return the full 41-tuple to re-populate Routing Config controls from state.
 
-    Used by the tab-switch rehydration callback (Task 5). Order matches the large
+    Used by the tab-switch rehydration callback. Order matches the large
     output list used by preset/mode/apply callbacks:
       [mode-frozen, mode-editable, preset-status, config-status,
        unsaved-badge, apply-status, preset-value]
-      + 7 thresh values + 7 disabled.
+      + 7 slider-{name} values + 7 input-{name}-low values
+      + 7 input-{name}-high values + 14 disabled flags.
     Clears transient badges on re-entry for clean re-hydration while restoring
     authoritative values + mode + disabled from routing_state.
     """
-    # Centralized threshold reads (Task 7 Step 1)
     thresholds = routing_state.get_thresholds()
-    thr = thresholds
-    vals = [getattr(thr, name) for name, *_ in THRESHOLD_FIELDS]
     is_frozen = routing_state.is_frozen
-    frozen = is_frozen
-    f_cls, e_cls = _mode_button_classes(frozen)
-    dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
-    # On tab re-activation: reflect current preset/mode/values, clear transient messages.
+    f_cls, e_cls = _mode_button_classes(is_frozen)
+    n = len(RANGE_FIELDS)
+    slider_vals = [[getattr(thresholds, fld["name"]).low,
+                    getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
+    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
+    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
+    dis_list = [is_frozen] * (2 * n)
     return tuple([
         f_cls, e_cls,
         f"Loaded: {routing_state.current_preset}",
@@ -480,12 +367,12 @@ def _compute_rehydrate_outputs():
         html.Span("", style={"display": "none"}),
         "",
         routing_state.current_preset,
-    ] + vals + dis_list)
+    ] + slider_vals + low_vals + high_vals + dis_list)
 
 
 def get_threshold_input_ids() -> List[str]:
     """Return the dcc.Input IDs for all threshold fields (used in callbacks)."""
-    return [f"thresh-{name}" for name, *_ in THRESHOLD_FIELDS]
+    return [f"input-{fld['name']}-low" for fld in RANGE_FIELDS] + [f"input-{fld['name']}-high" for fld in RANGE_FIELDS]
 
 
 def _preset_options():
@@ -834,9 +721,15 @@ def register_routing_config_callbacks(app):
     #         Replaces the 4 overlapping callbacks (_rehydrate_on_tab,
     #         update_routing_config, _apply_thresholds, _switch_mode) which all
     #         wrote to the same 21 Outputs and required `allow_duplicate=True`.
-    #         This single callback owns ALL 21 Outputs and uses ctx.triggered
+    #         This single callback owns ALL 41 Outputs and uses ctx.triggered
     #         to dispatch state mutations via _dispatch_action + render via
     #         _render_state. NO allow_duplicate=True anywhere. ---
+    n = len(RANGE_FIELDS)
+    low_outputs = [Output(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+    high_outputs = [Output(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS]
+    low_dis = [Output(f"input-{f['name']}-low", "disabled") for f in RANGE_FIELDS]
+    high_dis = [Output(f"input-{f['name']}-high", "disabled") for f in RANGE_FIELDS]
+
     @app.callback(
         [Output("mode-frozen", "className"),
          Output("mode-editable", "className"),
@@ -845,77 +738,92 @@ def register_routing_config_callbacks(app):
          Output("thresh-unsaved-badge", "children"),
          Output("thresh-apply-status", "children"),
          Output("routing-preset", "value")]
-        + [Output(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS]
-        + [Output(f"thresh-{name}", "disabled") for name, *_ in THRESHOLD_FIELDS],
+        + [Output(f"slider-{f['name']}", "value") for f in RANGE_FIELDS]
+        + low_outputs + high_outputs + low_dis + high_dis,
         [Input("routing-preset", "value"),
          Input("mode-frozen", "n_clicks"),
          Input("mode-editable", "n_clicks"),
          Input("btn-apply-thresholds", "n_clicks"),
          Input("tabs", "value")]
-        + [Input(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
-        [State(f"thresh-{name}", "value") for name, *_ in THRESHOLD_FIELDS],
+        + [Input(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+        + [Input(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS],
+        [State(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+        + [State(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS],
         prevent_initial_call=False,
     )
     def _routing_config_ui(
         preset_value, _f_clicks, _e_clicks, _apply_clicks, tab,
-        *thresh_inputs_and_state
+        *input_args,
     ):
         """Single state-driven callback for the entire Routing Config tab.
 
         - Reads `ctx.triggered` to identify the action
         - Mutates `routing_state` (via _dispatch_action)
-        - Projects state to 21 UI outputs (via _render_state)
+        - Projects state to 41 UI outputs (via _render_state)
 
         NO allow_duplicate=True anywhere. This is the ONLY callback that
-        writes to these 21 Outputs.
+        writes to these 41 Outputs.
         """
         from dash import callback_context as _ctx
         from dash.exceptions import PreventUpdate as _PreventUpdate
+        from dash import no_update as _no_update
 
-        # The 7 thresh inputs appear as both Inputs (for "user typed" detection)
-        # and State (for Apply action). Since Dash passes them in declaration
-        # order, the LAST 7 args (after the 5 head inputs) are the State copies.
-        thresh_state = thresh_inputs_and_state[-len(THRESHOLD_FIELDS):]
-        # (thresh_inputs slice not needed; values for typing path come via State+trigger)
+        n = len(RANGE_FIELDS)
+        # Last 2*n args are the 14 State input values: [low_0..low_6, high_0..high_6]
+        range_state = list(input_args[-2 * n:])
 
         if not _ctx.triggered:
-            # Initial render: dispatch_action is a no-op, just render.
-            return _render_state(list(thresh_state))
+            return _render_state(range_state)
 
         trigger_id = _ctx.triggered[0]["prop_id"]
         trigger_value = _ctx.triggered[0]["value"]
 
-        # Tab switch: only act when switching TO routing-config
-        # Task 5 Step 1: Strengthen the tab listener callback.
-        # When tab == "tab-routing-config", output to all thresh- inputs
-        # the current values from routing_state.get_thresholds(),
-        # output disabled state based on is_frozen,
-        # and output current mode UI classes. Use clean rehydrate
-        # to clear transient badges on re-entry.
         if trigger_id == "tabs.value":
             if trigger_value != "tab-routing-config":
                 raise _PreventUpdate
-            # Re-hydrate directly from authoritative state (ignore stale browser State values)
             return _compute_rehydrate_outputs()
 
-        # Dispatch state mutation
-        _dispatch_action(trigger_id, trigger_value, tuple(thresh_state))
+        _dispatch_action(trigger_id, trigger_value, tuple(range_state))
+        rendered = _render_state(range_state)
 
-        # Project state to UI
-        rendered = _render_state(list(thresh_state))
-
-        # Task 6 Step 2: Remove aggressive revert on every keystroke for valid ranges.
-        # When the user is typing directly in a thresh input, return no_update for the
-        # 7 value slots. This lets the browser <input> retain the user's in-progress
-        # text (including valid edits and intermediate states like '0.' or '12').
-        # Previously _render_state always emitted authoritative vals, forcing revert.
-        # Full validate + possible error (red) or commit only happens on Apply.
-        # (Unsaved badge and other UI still update using the incoming thresh_state.)
-        if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
-            from dash import no_update as _no_update
+        if trigger_id and trigger_id.startswith("input-") and trigger_id.endswith(".value"):
             outs = list(rendered)
-            n = len(THRESHOLD_FIELDS)
             for i in range(n):
-                outs[7 + i] = _no_update
+                outs[14 + i] = _no_update
+                outs[21 + i] = _no_update
             return tuple(outs)
         return rendered
+
+    # --- 7. Slider <-> Inputs bidirectional sync (range fields).
+    #         For each RANGE_FIELDS entry, two pure-function callbacks:
+    #           (a) slider-{name}.value        -> input-{name}-low/high.value
+    #           (b) input-{name}-low/high.value -> slider-{name}.value
+    #         Pure logic is in _sync_slider_to_input / _sync_input_to_slider
+    #         and exercised directly by tests/test_routing_config_sync.py.
+    #         prevent_initial_call=True so the sync only fires on real user
+    #         interaction (avoids feedback loops on initial render).
+    for field in RANGE_FIELDS:
+        _name = field["name"]
+        _slider_id = f"slider-{_name}"
+        _low_id = f"input-{_name}-low"
+        _high_id = f"input-{_name}-high"
+
+        # (a) Slider -> Inputs
+        @app.callback(
+            [Output(_low_id, "value", allow_duplicate=True),
+             Output(_high_id, "value", allow_duplicate=True)],
+            Input(_slider_id, "value"),
+            prevent_initial_call=True,
+        )
+        def _slider_to_inputs(_value, _name=_name):
+            return _sync_slider_to_input(_value)
+
+        # (b) Inputs -> Slider (with low>high / None guard via PreventUpdate)
+        @app.callback(
+            Output(_slider_id, "value", allow_duplicate=True),
+            [Input(_low_id, "value"),
+             Input(_high_id, "value")],
+            prevent_initial_call=True,
+        )
+        def _inputs_to_slider(_low, _high, _name=_name):
+            return _sync_input_to_slider(_low, _high)
