@@ -8,6 +8,7 @@ from app.routing_config import (
     _mode_button_classes,
     _disabled_list,
     _compute_rehydrate_outputs,
+    _apply_thresholds,
 )
 from app.routing_state import routing_state
 from config.routing_thresholds import RoutingThresholds
@@ -127,5 +128,112 @@ def test_register_callbacks_has_no_duplicate_primary_outputs():
         # "Output ... is already in use" during registration. Reaching this
         # line means the registration is clean.
         assert len(app.callback_map) >= 1
+    finally:
+        _restore_state_snapshot(snap)
+
+
+# --- Task 5 Step 4: Tab switch re-hydration and Apply persistence tests ---
+# These verify that switching to the Config tab (rehydrate) and Apply produce
+# stable, correct values + mode + no spurious red/unsaved on valid states.
+
+
+def test_rehydrate_after_apply_shows_custom_values_and_editable():
+    """Apply custom thresholds, then simulate tab switch (rehydrate) must reflect them.
+    Also inputs must be enabled (not frozen).
+    """
+    snap = _save_state_snapshot()
+    try:
+        _reset()
+        # Go editable and apply a different tau + r
+        routing_state.set_frozen_mode(False)
+        custom_vals = (0.20, 0.95, 77.0, 333.0, 9.5, 0.80, 75.0)
+        _apply_thresholds(custom_vals)
+
+        out = _compute_rehydrate_outputs()
+        # Values at indices 7..13 should be the applied ones
+        assert abs(out[7] - 0.20) < 1e-9   # h
+        assert abs(out[9] - 77.0) < 1e-9   # r
+        assert abs(out[11] - 9.5) < 1e-9   # tau
+        # Last 7 are disabled flags -> all False because now editable after apply
+        assert all(d is False for d in out[14:21])
+        # Mode buttons: frozen should be the non-active style
+        # (we only assert that editable is the "primary" one)
+        assert "primary" in out[1] or "btn-primary" in out[1]
+    finally:
+        _restore_state_snapshot(snap)
+
+
+def test_apply_thresholds_updates_state_and_clears_badges():
+    """Direct call to _apply_thresholds (the Step 2 helper) must set custom,
+    flip is_frozen=False, and clear last_error/last_status.
+    """
+    snap = _save_state_snapshot()
+    try:
+        _reset()
+        routing_state.last_error = "some prior error"
+        routing_state.last_status = "Reviewed 3 nets"
+        routing_state.set_frozen_mode(True)
+
+        good_vals = (0.25, 0.90, 120.0, 600.0, 15.0, 0.88, 82.0)
+        _apply_thresholds(good_vals)
+
+        assert routing_state.is_frozen is False
+        assert routing_state.custom_thresholds is not None
+        assert abs(routing_state.custom_thresholds.max_tau_ps - 15.0) < 1e-9
+        assert routing_state.last_error is None
+        assert routing_state.last_status == ""
+    finally:
+        _restore_state_snapshot(snap)
+
+
+def test_rehydrate_on_valid_preset_produces_no_red_error():
+    """Loading/rehydrating a perfectly valid preset must not leave red error text
+    or unsaved badge. (Guards against spurious red on initial load / tab re-entry.)
+    """
+    snap = _save_state_snapshot()
+    try:
+        _reset()
+        # Simulate a prior failed apply leaving error (should be cleared on clean rehydrate path)
+        routing_state.last_error = "some validation error from before"
+
+        # Tab rehydrate (as strengthened in Step 1) must emit clean status
+        out = _compute_rehydrate_outputs()
+        # config-status is index 3
+        config_status = out[3]
+        # either empty string or a Span with no red error content
+        if config_status:
+            # if it is a component, its content should not contain "Error"
+            txt = getattr(config_status, "children", "") or ""
+            assert "Error" not in str(txt)
+        # unsaved-badge at 4 should be the hidden span
+        badge = out[4]
+        style = getattr(badge, "style", {}) or {}
+        assert style.get("display") == "none" or badge.children in ("", None, [])
+        # And last_error on state may still be set (rehydrate forces UI ""), but
+        # for a normal valid load the UI projection is clean.
+    finally:
+        _restore_state_snapshot(snap)
+
+
+def test_tab_rehydrate_uses_authoritative_state_not_stale_inputs():
+    """Even if 'browser' input values (simulated) differ, rehydrate must push
+    the authoritative get_thresholds() values and correct disabled/mode.
+    """
+    snap = _save_state_snapshot()
+    try:
+        _reset()
+        # Put custom state
+        routing_state.set_frozen_mode(False)
+        routing_state.custom_thresholds = RoutingThresholds.from_dict(
+            routing_state.thresholds.to_dict()
+        )
+        routing_state.custom_thresholds.max_c_ff = 1234.0
+
+        # Direct rehydrate (what tab listener now calls) must ignore any other numbers
+        out = _compute_rehydrate_outputs()
+        c_idx = 7 + 3  # c_ff is the 4th thresh field (0-based 3)
+        assert abs(out[c_idx] - 1234.0) < 1e-9
+        # inputs must be enabled
+        assert out[14] is False
     finally:
         _restore_state_snapshot(snap)

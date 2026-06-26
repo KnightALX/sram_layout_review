@@ -186,18 +186,61 @@ def _validate_apply(thresh_values: tuple) -> tuple[Optional[RoutingThresholds], 
 
     A `None` value in thresh_values means "use the current state value" (the
     input was empty). It does NOT mean invalid.
+
+    Task 5 Step 3: Guard with user_modified check against last-known-good
+    (current authoritative values). Only treat a failure as "red/invalid"
+    when the input value(s) themselves differ from the last known good and
+    cause the validation failure. On initial load / re-hydration / Apply of
+    an unchanged valid preset, do not produce an error (prevents spurious
+    red styling).
     """
     current = routing_state.get_thresholds()
+    current_vals = [getattr(current, name) for name, *_ in THRESHOLD_FIELDS]
     tentative_dict = current.to_dict()
-    for (name, *_), val in zip(THRESHOLD_FIELDS, thresh_values):
+
+    user_modified = False
+    for i, (name, *_) in enumerate(THRESHOLD_FIELDS):
+        val = thresh_values[i] if i < len(thresh_values) else None
         if val is not None:
+            try:
+                if abs(float(val) - float(current_vals[i])) > 1e-9:
+                    user_modified = True
+            except Exception:
+                user_modified = True
             tentative_dict[name] = val
+
+    if not user_modified:
+        # Values match last known good (or were all None). This is not a
+        # modifying action that can be the "cause of failure".
+        # Return the known-good thresholds; never surface red for this.
+        return current, None
+
     try:
         tentative = RoutingThresholds.from_dict(tentative_dict)
         tentative.validate()
     except Exception as e:
         return None, str(e)
     return tentative, None
+
+
+def _apply_thresholds(thresh_values: tuple) -> None:
+    """Apply the (possibly edited) threshold values from the UI inputs.
+
+    Task 5 Step 2: Always update state on successful Apply and clear badges.
+    Sets is_frozen based on mode: after Apply we adopt the values as custom
+    and switch to (or remain in) editable mode (is_frozen=False).
+    """
+    valid, err = _validate_apply(thresh_values)
+    if valid is None:
+        routing_state.last_error = err
+    else:
+        # Commit the values and set is_frozen=False (editable / applied mode)
+        routing_state.set_custom(valid)
+        routing_state.last_error = None
+    # Apply represents a config change — clear prior review status so it
+    # does not linger, and ensure unsaved/apply badges will be cleared on
+    # the subsequent render (since authoritative now matches applied values).
+    routing_state.last_status = ""
 
 
 def _render_state(thresh_input_values: list) -> tuple:
@@ -224,10 +267,20 @@ def _render_state(thresh_input_values: list) -> tuple:
     dis_list = _disabled_list(frozen, len(THRESHOLD_FIELDS))
 
     # detect unsaved changes (only meaningful in editable mode)
-    has_unsaved = (
-        not frozen
-        and list(thresh_input_values) != vals
-    )
+    # Task 5 Step 3: tolerant check against last known good to avoid
+    # spurious "unsaved" (orange) / perceived red on re-hydration or
+    # initial load of valid values (float formatting etc.).
+    def _vals_differ(a, b):
+        try:
+            return abs(float(a) - float(b)) > 1e-9
+        except Exception:
+            return a != b
+    has_unsaved = False
+    if not frozen:
+        for iv, sv in zip(thresh_input_values, vals):
+            if _vals_differ(iv, sv):
+                has_unsaved = True
+                break
 
     source = routing_state.get_threshold_source()
     preset_status = html.Span(source, style={"color": "#888", "fontSize": "11px"})
@@ -324,15 +377,9 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         return
 
     if trigger_id == "btn-apply-thresholds.n_clicks":
-        valid, err = _validate_apply(thresh_values)
-        if valid is None:
-            routing_state.last_error = err
-        else:
-            routing_state.set_custom(valid)
-            routing_state.last_error = None
-        # Apply represents a config change — the previous run's status
-        # message ("Reviewed N nets...") is no longer accurate.
-        routing_state.last_status = ""
+        # Task 5 Step 2: delegate to _apply_thresholds (ensures state update +
+        # is_frozen set based on applied/editable mode + badges cleared).
+        _apply_thresholds(thresh_values)
         return
 
     if trigger_id and trigger_id.startswith("thresh-") and trigger_id.endswith(".value"):
@@ -649,8 +696,9 @@ def register_routing_config_callbacks(app):
          Input("nets-meta-store", "data")],
     )
     def _refresh_previews(golden_re, batch_re, tab, _nets_meta):
-        # Only run when this tab is visible (cheap) — otherwise no_update.
-        if tab not in (None, "tab-routing-config"):
+        # Task 5 Step 1: tab listener in preview callback.
+        # Only run when this tab is visible.
+        if tab != "tab-routing-config":
             return no_update, no_update, no_update
         return (
             _regex_match_preview(golden_re or "", "Golden"),
@@ -781,10 +829,17 @@ def register_routing_config_callbacks(app):
         trigger_value = _ctx.triggered[0]["value"]
 
         # Tab switch: only act when switching TO routing-config
+        # Task 5 Step 1: Strengthen the tab listener callback.
+        # When tab == "tab-routing-config", output to all thresh- inputs
+        # the current values from routing_state.get_thresholds(),
+        # output disabled state based on is_frozen,
+        # and output current mode UI classes. Use clean rehydrate
+        # to clear transient badges on re-entry.
         if trigger_id == "tabs.value":
             if trigger_value != "tab-routing-config":
                 raise _PreventUpdate
-            # else: fall through to dispatch (no-op for tabs) + render
+            # Re-hydrate directly from authoritative state (ignore stale browser State values)
+            return _compute_rehydrate_outputs()
 
         # Dispatch state mutation
         _dispatch_action(trigger_id, trigger_value, tuple(thresh_state))
