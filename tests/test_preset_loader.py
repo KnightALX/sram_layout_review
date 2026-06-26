@@ -37,3 +37,26 @@ def test_load_raises_on_missing_keys(tmp_path):
     bad.write_text("net_class: wl\nmax_h_ratio: 0.2\n")  # missing other fields
     with pytest.raises(ValueError, match="Missing required fields"):
         load_preset_yaml(str(bad))
+
+
+def test_load_preset_yaml_with_nested_low_high(tmp_path):
+    """YAML with nested {low, high} dicts loads into RoutingThresholds with Range fields."""
+    import yaml
+    from config.preset_loader import load_preset_yaml
+
+    yaml_path = tmp_path / "test_range.yaml"
+    yaml_path.write_text(yaml.safe_dump({
+        "net_class": "wl",
+        "h_ratio":    {"low": 0.0, "high": 0.20},
+        "v_ratio":    {"low": 0.0, "high": 1.0},
+        "r_ohm":      {"low": 0.0, "high": 80.0},
+        "c_ff":       {"low": 0.0, "high": 500.0},
+        "tau_ps":     {"low": 0.0, "high": 12.5},
+        "via_coverage": {"low": 0.85, "high": 1.0},
+        "similarity": {"low": 80.0, "high": 100.0},
+    }))
+    t = load_preset_yaml("test_range", presets_dir=tmp_path)
+    assert t.h_ratio.high == 0.20
+    assert t.r_ohm.high == 80.0
+    # validate should pass
+    t.validate()

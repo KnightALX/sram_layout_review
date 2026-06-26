@@ -42,21 +42,48 @@ def _schema_field_names() -> set:
 
 
 def _normalize_keys(raw: Dict[str, Any]) -> Dict[str, Any]:
-    """Apply alias map; raise on truly unknown keys."""
-    schema = _schema_field_names()
+    """Normalize YAML dict to the format RoutingThresholds.from_dict expects.
+
+    For range fields (h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage,
+    similarity), accepts:
+      - nested {low, high} dict (preferred, new format)
+      - legacy max_X / min_X flat key (mapped to {low, high})
+
+    For non-range fields (net_class), pass through unchanged.
+    """
+    RANGE_FIELDS = ("h_ratio", "v_ratio", "r_ohm", "c_ff", "tau_ps",
+                    "via_coverage", "similarity")
+    LEGACY_MAX_TO_RANGE = {
+        "max_h_ratio": "h_ratio",
+        "max_v_ratio": "v_ratio",
+        "max_r_ohm":   "r_ohm",
+        "max_c_ff":    "c_ff",
+        "max_tau_ps":  "tau_ps",
+    }
+    LEGACY_MIN_TO_RANGE = {
+        "min_via_coverage": "via_coverage",
+        "min_similarity":   "similarity",
+    }
     out: Dict[str, Any] = {}
     for k, v in raw.items():
-        if k in schema:
-            out[k] = v
+        if k in LEGACY_MAX_TO_RANGE:
+            target = LEGACY_MAX_TO_RANGE[k]
+            existing = out.get(target) or {}
+            out[target] = {"low": existing.get("low", 0.0), "high": v}
             continue
-        if k in _ALIASES:
-            canonical = _ALIASES[k]
-            out[canonical] = v
+        if k in LEGACY_MIN_TO_RANGE:
+            target = LEGACY_MIN_TO_RANGE[k]
+            existing = out.get(target) or {}
+            out[target] = {"low": v, "high": existing.get("high", 1.0)}
             continue
-        raise PresetValidationError(
-            f"Unknown field '{k}' in preset YAML. "
-            f"Valid fields: {sorted(schema)}"
-        )
+        if k in RANGE_FIELDS and isinstance(v, dict) and "low" in v and "high" in v:
+            out[k] = {"low": float(v["low"]), "high": float(v["high"])}
+            continue
+        if k in RANGE_FIELDS and isinstance(v, (int, float)):
+            # bare number = max bound only (very old format)
+            out[k] = {"low": 0.0, "high": float(v)}
+            continue
+        out[k] = v
     return out
 
 
