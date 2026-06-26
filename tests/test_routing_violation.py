@@ -34,3 +34,30 @@ def test_all_kinds_covered():
     assert "via_coverage" in kinds
     assert "missing_via" in kinds
     assert "similarity" in kinds
+
+
+def test_violation_has_direction_and_range():
+    from config.routing_thresholds import Range
+    from core.routing_violation import RoutingViolation, ViolationKind
+
+    rng = Range(0.0, 0.15)
+    v = RoutingViolation(
+        kind=ViolationKind.H_RATIO, net_name="WL_0",
+        measured=0.22, direction="high",
+        range_low=rng.low, range_high=rng.high,
+    )
+    assert v.direction == "high"
+    assert v.range_low == 0.0
+    assert v.range_high == 0.15
+    assert v.measured == 0.22
+
+
+def test_violation_factory_uses_range():
+    from config.routing_thresholds import Range
+    from core.routing_violation import RoutingViolation
+
+    rng = Range(0.0, 100.0)
+    v = RoutingViolation.r_ohm("WL_0", 150.0, rng)
+    assert v.direction == "high"
+    assert v.measured == 150.0
+    assert v.range_high == 100.0

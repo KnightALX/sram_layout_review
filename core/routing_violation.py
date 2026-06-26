@@ -28,6 +28,12 @@ class RoutingViolation:
     x: Optional[float] = None
     y: Optional[float] = None
     polygon_index: Optional[int] = None
+    # Direction of the violation relative to the range
+    direction: Optional[str] = None          # "low" / "high"
+    range_low: Optional[float] = None
+    range_high: Optional[float] = None
+    # The actual measured value (used for per-cell coloring)
+    measured: Optional[float] = None
     # Measured vs limit
     h_ratio: Optional[float] = None
     v_ratio: Optional[float] = None
@@ -52,51 +58,69 @@ class RoutingViolation:
 
     # ---------- Factory helpers ----------
     @classmethod
-    def h_ratio(cls, net_name, h_ratio, limit):  # noqa: F811
+    def h_ratio(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.H_RATIO, net_name=net_name,
-            h_ratio=h_ratio, limit=limit,
-            message=f"h_ratio {h_ratio:.2%} > limit {limit:.2%}",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            h_ratio=value,
+            message=f"h_ratio {value:.2%} {direction} [{rng.low:.2%}, {rng.high:.2%}]",
         )
 
     @classmethod
-    def v_ratio(cls, net_name, v_ratio, limit):  # noqa: F811
+    def v_ratio(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.V_RATIO, net_name=net_name,
-            v_ratio=v_ratio, limit=limit,
-            message=f"v_ratio {v_ratio:.2%} > limit {limit:.2%}",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            v_ratio=value,
+            message=f"v_ratio {value:.2%} {direction} [{rng.low:.2%}, {rng.high:.2%}]",
         )
 
     @classmethod
-    def r_total(cls, net_name, r_total, limit):  # noqa: F811
+    def r_ohm(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.R_TOTAL, net_name=net_name,
-            r_total=r_total, limit=limit,
-            message=f"R {r_total:.2f}Ω > limit {limit:.2f}Ω",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            r_total=value,
+            message=f"R {value:.2f}\u03a9 {direction} [{rng.low:.2f}, {rng.high:.2f}]",
         )
 
     @classmethod
-    def c_total(cls, net_name, c_total, limit):  # noqa: F811
+    def c_ff(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.C_TOTAL, net_name=net_name,
-            c_total=c_total, limit=limit,
-            message=f"C {c_total:.2f}fF > limit {limit:.2f}fF",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            c_total=value,
+            message=f"C {value:.2f}fF {direction} [{rng.low:.2f}, {rng.high:.2f}]",
         )
 
     @classmethod
-    def tau_ps(cls, net_name, tau_ps, limit):  # noqa: F811
+    def tau_ps(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.TAU_PS, net_name=net_name,
-            tau_ps=tau_ps, limit=limit,
-            message=f"τ {tau_ps:.2f}ps > limit {limit:.2f}ps",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            tau_ps=value,
+            message=f"\u03c4 {value:.2f}ps {direction} [{rng.low:.2f}, {rng.high:.2f}]",
         )
 
     @classmethod
-    def via_coverage(cls, net_name, via_coverage, limit):  # noqa: F811
+    def via_coverage(cls, net_name, value, rng):  # noqa: F811
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.VIA_COVERAGE, net_name=net_name,
-            via_coverage=via_coverage, limit=limit,
-            message=f"via coverage {via_coverage:.2%} < limit {limit:.2%}",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            via_coverage=value,
+            message=f"via_coverage {value:.2%} {direction} [{rng.low:.2%}, {rng.high:.2%}]",
         )
 
     @classmethod
@@ -107,9 +131,12 @@ class RoutingViolation:
         )
 
     @classmethod
-    def similarity(cls, net_name, similarity_score, limit):
+    def similarity(cls, net_name, value, rng):
+        direction = rng.violation_direction(value)
         return cls(
             kind=ViolationKind.SIMILARITY, net_name=net_name,
-            similarity_score=similarity_score, limit=limit,
-            message=f"similarity {similarity_score:.1f} < limit {limit:.1f}",
+            measured=value, direction=direction,
+            range_low=rng.low, range_high=rng.high,
+            similarity_score=value,
+            message=f"similarity {value:.1f} {direction} [{rng.low:.1f}, {rng.high:.1f}]",
         )
