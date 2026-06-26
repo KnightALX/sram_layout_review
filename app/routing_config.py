@@ -155,19 +155,34 @@ def _handle_routing_preset_or_thresh(
         _no_update,
     ] + thresh_value_slots + dis_editable)
 
-THRESHOLD_FIELDS = [
-    ("max_h_ratio", "Max H Ratio (WL gate)", "0.0", "1.0", "0.01"),
-    ("max_v_ratio", "Max V Ratio (IO gate)", "0.0", "1.0", "0.01"),
-    ("max_r_ohm", "Max Total R (Ω)", "0", "10000", "0.1"),
-    ("max_c_ff", "Max Total C (fF)", "0", "100000", "1"),
-    ("max_tau_ps", "Max Effective τ (ps)", "0", "1000", "0.1"),
-    ("min_via_coverage", "Min Via Coverage", "0.0", "1.0", "0.01"),
-    ("min_similarity", "Min Golden Similarity", "0", "100", "1"),
-]
+# REMOVED: THRESHOLD_FIELDS replaced by RANGE_FIELDS below (Task 14-20 will
+# migrate the remaining references in this module).
+# THRESHOLD_FIELDS = [
+#     ("max_h_ratio", "Max H Ratio (WL gate)", "0.0", "1.0", "0.01"),
+#     ("max_v_ratio", "Max V Ratio (IO gate)", "0.0", "1.0", "0.01"),
+#     ("max_r_ohm", "Max Total R (Ω)", "0", "10000", "0.1"),
+#     ("max_c_ff", "Max Total C (fF)", "0", "100000", "1"),
+#     ("max_tau_ps", "Max Effective τ (ps)", "0", "1000", "0.1"),
+#     ("min_via_coverage", "Min Via Coverage", "0.0", "1.0", "0.01"),
+#     ("min_similarity", "Min Golden Similarity", "0", "100", "1"),
+# ]
 # Task 6 Step 3: mins for R/C/tau loosened to "0" (from "0.1"/"0.01") so that
 # browser-native :invalid styling (red) is not triggered for near-zero or
 # intermediate positive values during live typing. Real >0 enforcement still
 # happens in RoutingThresholds.validate() on Apply only.
+
+# 7 metric range fields, each with a RangeSlider (low, high handles) plus
+# two dcc.Input fields for precise text input. The fmt field controls
+# how values are displayed in the inputs.
+RANGE_FIELDS = [
+    {"name": "h_ratio",      "label": "H Ratio",         "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
+    {"name": "v_ratio",      "label": "V Ratio",         "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
+    {"name": "r_ohm",        "label": "R (\u03a9)",      "slider_min": 0.0,    "slider_max": 10000.0, "step": 0.1,   "fmt": "{:.1f}"},
+    {"name": "c_ff",         "label": "C (fF)",          "slider_min": 0.0,    "slider_max": 100000.0,"step": 1,     "fmt": "{:.1f}"},
+    {"name": "tau_ps",       "label": "\u03c4 (ps)",     "slider_min": 0.0,    "slider_max": 1000.0,  "step": 0.1,   "fmt": "{:.1f}"},
+    {"name": "via_coverage", "label": "Via Coverage",    "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
+    {"name": "similarity",   "label": "Similarity",      "slider_min": 0.0,    "slider_max": 100.0,   "step": 1,     "fmt": "{:.0f}"},
+] # noqa: E501
 
 
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
