@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class NetClass(str, Enum):
@@ -23,6 +23,42 @@ class NetClass(str, Enum):
 class ThresholdField:
     """Threshold field descriptor (placeholder, reserved for future use)."""
     pass
+
+
+@dataclass(frozen=True)
+class Range:
+    """A closed interval [low, high]. Value passes iff low <= value <= high.
+
+    Attributes:
+        low: Lower bound (inclusive).
+        high: Upper bound (inclusive).
+
+    Raises:
+        ValueError: When constructed with low > high.
+
+    Note: low == high is allowed (single-point range). Only strict
+    inversion (low > high) is rejected.
+    """
+    low: float
+    high: float
+
+    def __post_init__(self):
+        if self.low > self.high:
+            raise ValueError(
+                f"Range low ({self.low}) > high ({self.high})"
+            )
+
+    def contains(self, value: float) -> bool:
+        """Return True if value is in [low, high]."""
+        return self.low <= value <= self.high
+
+    def violation_direction(self, value: float) -> Optional[str]:
+        """Return 'low' if value < low, 'high' if value > high, None if in range."""
+        if value < self.low:
+            return "low"
+        if value > self.high:
+            return "high"
+        return None
 
 
 # Built-in presets (used when no YAML is found)
