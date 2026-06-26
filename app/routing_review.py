@@ -167,12 +167,12 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
             # Centralized read (Task 7 Step 1)
             thresholds = routing_state.get_thresholds()
             cards = [
-                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"{thresholds.max_h_ratio*100:.0f}/{thresholds.max_v_ratio*100:.0f}%"),
+                _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}% \u2208 [{thresholds.h_ratio.low*100:.0f}%, {thresholds.h_ratio.high*100:.0f}%] / [{thresholds.v_ratio.low*100:.0f}%, {thresholds.v_ratio.high*100:.0f}%]", "min–max"),
                 _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max", threshold="0"),
-                _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max", threshold=f"{thresholds.max_r_ohm:.1f}Ω"),
-                _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF ∈ [{thresholds.c_ff.low}, {thresholds.c_ff.high}]", "min–max"),
-                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps ∈ [{thresholds.tau_ps.low}, {thresholds.tau_ps.high}]", "min–max"),
-                _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100",       "min–max", threshold=f"{thresholds.min_similarity:.0f}"),
+                _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω \u2208 [{thresholds.r_ohm.low:.1f}, {thresholds.r_ohm.high:.1f}]", "min–max"),
+                _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF \u2208 [{thresholds.c_ff.low}, {thresholds.c_ff.high}]", "min–max"),
+                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps \u2208 [{thresholds.tau_ps.low}, {thresholds.tau_ps.high}]", "min–max"),
+                _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100 \u2208 [{thresholds.similarity.low:.0f}, {thresholds.similarity.high:.0f}]", "min–max"),
             ]
 
     # Pass / Fail card — always show count
@@ -443,20 +443,20 @@ def _resolve_regex(pattern: str) -> List[str]:
 def _compute_violations_for_net(metrics: Dict[str, Any], thresholds) -> List[RoutingViolation]:
     """Convert gate failures into structured violations with location."""
     v = []
-    if metrics["h_ratio"] > thresholds.max_h_ratio:
-        v.append(RoutingViolation.h_ratio(metrics["net_name"], metrics["h_ratio"], thresholds.max_h_ratio))
-    if metrics["v_ratio"] > thresholds.max_v_ratio:
-        v.append(RoutingViolation.v_ratio(metrics["net_name"], metrics["v_ratio"], thresholds.max_v_ratio))
-    if metrics["r_total"] > thresholds.max_r_ohm:
-        v.append(RoutingViolation.r_total(metrics["net_name"], metrics["r_total"], thresholds.max_r_ohm))
+    if not thresholds.h_ratio.contains(metrics["h_ratio"]):
+        v.append(RoutingViolation.h_ratio(metrics["net_name"], metrics["h_ratio"], thresholds.h_ratio))
+    if not thresholds.v_ratio.contains(metrics["v_ratio"]):
+        v.append(RoutingViolation.v_ratio(metrics["net_name"], metrics["v_ratio"], thresholds.v_ratio))
+    if not thresholds.r_ohm.contains(metrics["r_total"]):
+        v.append(RoutingViolation.r_ohm(metrics["net_name"], metrics["r_total"], thresholds.r_ohm))
     if not thresholds.c_ff.contains(metrics["c_total"]):
         v.append(RoutingViolation.c_ff(metrics["net_name"], metrics["c_total"], thresholds.c_ff))
     if not thresholds.tau_ps.contains(metrics["effective_tau_ps"]):
         v.append(RoutingViolation.tau_ps(metrics["net_name"], metrics["effective_tau_ps"], thresholds.tau_ps))
-    if metrics["via_coverage"] < thresholds.min_via_coverage:
-        v.append(RoutingViolation.via_coverage(metrics["net_name"], metrics["via_coverage"], thresholds.min_via_coverage))
-    if metrics["similarity_score"] < thresholds.min_similarity:
-        v.append(RoutingViolation.similarity(metrics["net_name"], metrics["similarity_score"], thresholds.min_similarity))
+    if not thresholds.via_coverage.contains(metrics["via_coverage"]):
+        v.append(RoutingViolation.via_coverage(metrics["net_name"], metrics["via_coverage"], thresholds.via_coverage))
+    if not thresholds.similarity.contains(metrics["similarity_score"]):
+        v.append(RoutingViolation.similarity(metrics["net_name"], metrics["similarity_score"], thresholds.similarity))
     for loc in metrics.get("missing_locations", []):
         v.append(RoutingViolation.missing_via(metrics["net_name"], loc["x"], loc["y"],
                                               f"{loc['layer_a']}/{loc['layer_b']}"))
