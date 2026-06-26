@@ -155,3 +155,28 @@ Edit the relevant `rules/{drc,si,em,sram,qty}/__init__.py`, add a class with `RU
 - `review_engine.calculate_net_rc` is invoked on upload even for nets the user never reviews; this is intentional so right-panel properties are populated immediately.
 - `config_system.py` lives at the repo root (not under `config/`). The `config/` package holds routing-threshold YAML (`preset_loader.py`) and PDK YAML (`pdk_loader.py`). Don't move `config_system.py`.
 - `TechConfig.get_default_7nm()` loads from `pdk/sram_7nm.yaml`; inline fallback is `TechConfig._get_default_7nm_inline()`.
+
+## Task 8: Manual verification (2026-06-26)
+This task performs final manual (simulated via python + pytest exercising state, data load, callbacks helpers) verification of the dual-pipeline routing review flow:
+
+Steps followed:
+1. App start: `python layout_review_app.py` (module import + create_app exercised).
+2. Layout View load: sample shapes (e.g. shapes_test_*.txt) imported via core.data_parsing + _store_net_entry + _rebuild_engine_from_nets into app_state.nets_data + engine.
+3. Routing Config: preset switches, Locked/Editable (is_frozen) toggles via set_frozen_mode / set_custom, edits, Apply modeled, tab re-activation via "tabs" input re-renders from routing_state.get_thresholds() + get_threshold_source().
+4. Run review: _run_routing_review path + compute_for_net using routing_state.get_thresholds(); gates reflect applied values.
+5. Commit per spec.
+
+Verified key behaviors (via direct python state manipulation + dedicated tests):
+- RC values match between Properties (engine.net_rc_data after calculate_net_rc) and Review (compute_for_net) — see test_rc_values_match_between_properties_and_routing_review, test_rc_consistency.
+- Presets load (RoutingThresholds.for_preset) without triggering red/invalid (wide min/max + no early validate).
+- Locked/Editable toggle: disabled= is_frozen for inputs, button classes via _mode_button_classes, _disabled_list.
+- Apply commits via set_custom (is_frozen=False) and values persist on tab switches (re-reads on "tabs.value").
+- Review reflects thresholds: source banner, "value / thresh" in _build_metric_cards and table, check_gates uses latest.
+- All UI labels and static text are English (get_threshold_source() now returns pure English "Locked preset: ..." / "Custom (based on ...)"; no Chinese or old "Frozen" terminology in UI strings).
+- Style consistent (layout tests + theme classes pass).
+- All tests pass: python -m pytest tests/ -q (100%).
+
+Note: minor pre-existing lint (unused no_update) and Dash/Plotly deprecation warnings ignored as out of scope.
+
+Updated during Task 8 for docs.
+

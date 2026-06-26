@@ -11,7 +11,8 @@ their regex matches anything.
 
 Task 7 hygiene: threshold *reads* are centralized. All code in this file
 (and routing_review) obtains active thresholds exclusively via
-routing_state.get_thresholds() and reads mode via the is_frozen attribute.
+routing_state.get_thresholds() and reads mode via the is_frozen attribute
+(True == Locked per the UI buttons).
 (get_thresholds is the single source of truth for values; internal writes to
 the backing fields are only for preset load / set_custom paths.)
 """
@@ -46,7 +47,7 @@ def _handle_routing_preset_or_thresh(
     n_fields = len(THRESHOLD_FIELDS)
     # Centralized reads (Task 7 Step 1)
     is_frozen = routing_state.is_frozen
-    frozen = is_frozen
+    frozen = is_frozen  # Locked when True (matches button)
     thresholds = routing_state.get_thresholds()
     dis_list = _disabled_list(frozen, n_fields)
     f_cls, e_cls = _mode_button_classes(frozen)
@@ -77,7 +78,7 @@ def _handle_routing_preset_or_thresh(
                 curr_p,
             ] + curr_vals + dis_ed)
 
-        # frozen load
+        # Locked (frozen) load
         try:
             from config.routing_thresholds import _BUILTIN_PRESETS
             if preset in _BUILTIN_PRESETS and preset not in list_yaml_presets():
@@ -86,10 +87,10 @@ def _handle_routing_preset_or_thresh(
                 from config.preset_loader import load_preset_yaml as _load  # local alias
                 t = _load(preset)
             routing_state.current_preset = preset
-            # Base preset load (frozen path): direct set to the backing preset field.
+            # Base preset load (Locked/frozen path): direct set to the backing preset field.
             # Value reads always go through get_thresholds() which is authoritative on is_frozen.
             routing_state.thresholds = t
-            routing_state.set_frozen_mode(True)  # ensures is_frozen; custom draft preserved by set_frozen_mode but ignored by get while frozen
+            routing_state.set_frozen_mode(True)  # ensures is_frozen (Locked); custom draft preserved by set_frozen_mode but ignored by get while Locked
             status = f"Loaded preset: {preset}"
             thresh_outputs = [getattr(t, name) for name, *_ in THRESHOLD_FIELDS]
             dis_f = _disabled_list(True, n_fields)
@@ -170,8 +171,9 @@ THRESHOLD_FIELDS = [
 
 
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
-    """Pure helper: return (frozen_button_class, editable_button_class).
+    """Pure helper: return (locked_button_class, editable_button_class).
 
+    frozen=True means Locked (primary style on Locked button).
     Used by layout builder and all callbacks that touch mode buttons.
     Reduces duplication of the ternary class logic.
     """
@@ -183,7 +185,7 @@ def _mode_button_classes(frozen: bool) -> tuple[str, str]:
 def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
     """Pure helper: return disabled flags for threshold inputs.
 
-    frozen=True -> all disabled; frozen=False -> all enabled.
+    frozen=True (Locked) -> all disabled; frozen=False (Editable) -> all enabled.
     """
     return [frozen] * n_fields
 
@@ -243,7 +245,7 @@ def _apply_thresholds(thresh_values: tuple) -> None:
     if valid is None:
         routing_state.last_error = err
     else:
-        # Commit the values and set is_frozen=False (editable / applied mode)
+        # Commit the values and set is_frozen=False (Editable / applied mode)
         routing_state.set_custom(valid)
         routing_state.last_error = None
     # Apply represents a config change — clear prior review status so it
@@ -288,7 +290,7 @@ def _render_state(thresh_input_values: list) -> tuple:
         except Exception:
             return a != b
     has_unsaved = False
-    if not frozen:
+    if not frozen:  # Editable mode
         for iv, sv in zip(thresh_input_values, vals):
             if _vals_differ(iv, sv):
                 has_unsaved = True
@@ -358,7 +360,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
 
     if trigger_id == "routing-preset.value":
         new_preset = trigger_value
-        # Centralized is_frozen read (Task 7)
+        # Centralized is_frozen read (Task 7); True == Locked mode
         if routing_state.is_frozen:
             routing_state.current_preset = new_preset
             routing_state.thresholds = RoutingThresholds.for_preset(new_preset)
@@ -366,7 +368,7 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
             routing_state.last_error = None
             routing_state.last_status = ""
         else:
-            # editable: block with warning (simple status + prevent by not mutating);
+            # Editable: block with warning (simple status + prevent by not mutating);
             # render will bounce the preset value and surface the message.
             if new_preset and new_preset != routing_state.current_preset:
                 routing_state.last_error = "Edit Mode: Preset switch Blocked (unsaved changes). Please click Apply or switch to Locked first."
@@ -374,13 +376,13 @@ def _dispatch_action(trigger_id, trigger_value, thresh_values) -> None:
         return
 
     if trigger_id == "mode-frozen.n_clicks":
-        routing_state.set_frozen_mode(True)  # preserves any custom draft (get_thresholds respects frozen)
+        routing_state.set_frozen_mode(True)  # Locked: preserves any custom draft (get_thresholds respects is_frozen)
         routing_state.last_error = None
         routing_state.last_status = ""
         return
 
     if trigger_id == "mode-editable.n_clicks":
-        routing_state.set_frozen_mode(False)
+        routing_state.set_frozen_mode(False)  # switch to Editable
         if routing_state.custom_thresholds is None:
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.get_thresholds().to_dict()

@@ -136,13 +136,45 @@ def test_build_table_rows_includes_c_column_with_threshold():
 def test_routing_review_source_banner_and_tab_structure():
     """Verify Task 3 Step 4: source banner div + content from routing_state."""
     from app.routing_review import _build_threshold_source, create_routing_review_tab
+    from app.routing_state import routing_state
+    from config.routing_thresholds import RoutingThresholds
 
-    banner = _build_threshold_source()
-    bstr = str(banner)
-    assert "Active Threshold Source:" in bstr, "Step 4 banner label"
+    snap = routing_state.current_preset, routing_state.is_frozen, routing_state.custom_thresholds
+    try:
+        routing_state.current_preset = "sram_7nm_wl"
+        routing_state.set_frozen_mode(True)
+        banner = _build_threshold_source()
+        bstr = str(banner)
+        assert "Active Threshold Source:" in bstr, "Step 4 banner label"
 
-    # the create_ func must emit the id used by callback
-    tab = create_routing_review_tab()
-    tstr = str(tab)
-    assert "routing-threshold-source" in tstr
-    assert "routing-metric-cards" in tstr  # also cards container
+        src = routing_state.get_threshold_source()
+        assert "Locked preset:" in src
+        assert "sram_7nm_wl" in src
+        # Small assertion per final review: no CJK chars (Chinese) and uses English terms
+        for ch in src:
+            assert not ('\u4e00' <= ch <= '\u9fff'), f"CJK char found in source banner: {src}"
+        assert "Locked" in src or "Custom" in src
+
+        # Also verify Editable/Custom path
+        routing_state.set_frozen_mode(False)
+        # ensure a custom draft exists for realism (doesn't affect source string)
+        if routing_state.custom_thresholds is None:
+            routing_state.custom_thresholds = RoutingThresholds.from_dict(
+                routing_state.thresholds.to_dict()
+            )
+        src2 = routing_state.get_threshold_source()
+        assert "Custom (based on" in src2
+        for ch in src2:
+            assert not ('\u4e00' <= ch <= '\u9fff'), f"CJK char found in source banner (custom): {src2}"
+        assert "Custom" in src2
+
+        # the create_ func must emit the id used by callback
+        tab = create_routing_review_tab()
+        tstr = str(tab)
+        assert "routing-threshold-source" in tstr
+        assert "routing-metric-cards" in tstr  # also cards container
+    finally:
+        # restore
+        routing_state.current_preset = snap[0]
+        routing_state.is_frozen = snap[1]
+        routing_state.custom_thresholds = snap[2]

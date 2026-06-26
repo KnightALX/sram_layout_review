@@ -4,7 +4,7 @@ Replaces `_create_review_content()` from `app/layout.py`.
 Shows the metric cards (incl. Eff. C) + sortable table (with C column + /thresh) + per-net directional viz + source banner.
 
 Task 7 hygiene note: This file exclusively uses the public RoutingState API
-(get_thresholds(), is_frozen property, get_threshold_source()) for all
+(get_thresholds(), is_frozen property (True=Locked), get_threshold_source()) for all
 threshold reads and display. All centralization of direct field access
 was performed on the config side; review code was already compliant.
 """
@@ -77,7 +77,7 @@ def _make_card(label: str, value: str, sub: str = "",
 
 
 def _build_threshold_source() -> html.Div:
-    """Build the prominent banner showing active threshold source (preset + frozen/custom state)."""
+    """Build the prominent banner showing active threshold source (preset + Locked/Editable state)."""
     src = routing_state.get_threshold_source()
     return html.Div([
         html.Span("Active Threshold Source: ", style={"fontSize": "11px", "fontWeight": "600"}),
@@ -293,7 +293,8 @@ def create_routing_review_tab():
         ),
 
         # Threshold source banner — shows active source from routing_state
-        # (e.g. "Active Threshold Source: sram_7nm_wl (Frozen)" or "Custom based on ...")
+        # (e.g. "Active Threshold Source: Locked preset: sram_7nm_wl" or
+        # "Custom (based on sram_7nm_wl)"). Uses get_threshold_source().
         # Updated by dedicated callback on tab/interval; initial value from state.
         html.Div(id="routing-threshold-source", children=_build_threshold_source()),
 
@@ -430,7 +431,7 @@ def register_routing_review_callbacks(app):
         return _empty_state_banner()
 
     # --- 0b. Threshold source banner — keeps "Active Threshold Source: xxx" in sync
-    #         with Routing Config (preset + frozen/custom via get_threshold_source).
+    #         with Routing Config (preset + Locked/Editable via get_threshold_source).
     @app.callback(
         Output("routing-threshold-source", "children"),
         [Input("tabs", "value"),
