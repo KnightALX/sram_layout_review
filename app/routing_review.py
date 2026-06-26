@@ -170,8 +170,8 @@ def _build_metric_cards(results: Dict[str, Dict[str, Any]]) -> List[html.Div]:
                 _make_card("H / V Ratio",  f"{h_lo*100:.0f}–{h_hi*100:.0f}%",     "max H% vs max V%", threshold=f"{thresholds.max_h_ratio*100:.0f}/{thresholds.max_v_ratio*100:.0f}%"),
                 _make_card("Missing Via",  f"{int(miss_lo)}–{int(miss_hi)}",       "min–max", threshold="0"),
                 _make_card("Eff. R (Ω)",   f"{r_lo:.1f}–{r_hi:.1f}Ω",              "min–max", threshold=f"{thresholds.max_r_ohm:.1f}Ω"),
-                _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF",             "min–max", threshold=f"{thresholds.max_c_ff:.1f}fF"),
-                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps",         "min–max", threshold=f"{thresholds.max_tau_ps:.1f}ps"),
+                _make_card("Eff. C (fF)",  f"{c_lo:.1f}–{c_hi:.1f}fF ∈ [{thresholds.c_ff.low}, {thresholds.c_ff.high}]", "min–max"),
+                _make_card("Eff. τ (ps)",  f"{tau_lo:.1f}–{tau_hi:.1f}ps ∈ [{thresholds.tau_ps.low}, {thresholds.tau_ps.high}]", "min–max"),
                 _make_card("Similarity",   f"{sim_lo:.0f}–{sim_hi:.0f}/100",       "min–max", threshold=f"{thresholds.min_similarity:.0f}"),
             ]
 
@@ -266,7 +266,7 @@ def _build_table_rows(batch_results: Dict[str, Dict[str, Any]]) -> List[Dict[str
                 "H %": _format_cell(m["h_ratio"] * 100, thresholds.h_ratio),
                 "V %": _format_cell(m["v_ratio"] * 100, thresholds.v_ratio),
                 "R (Ω)": _format_cell(m["r_total"], thresholds.r_ohm, "{:.2f}"),
-                "C (fF)": f"{c_cell} / max {thresholds.max_c_ff:.1f}",
+                "C (fF)": c_cell,
                 "τ (ps)": _format_cell(m["effective_tau_ps"], thresholds.tau_ps, "{:.2f}"),
                 "Via Cov": _format_cell(m["via_coverage"] * 100, thresholds.via_coverage),
                 "Miss Via": m["missing_via_count"],
@@ -449,10 +449,10 @@ def _compute_violations_for_net(metrics: Dict[str, Any], thresholds) -> List[Rou
         v.append(RoutingViolation.v_ratio(metrics["net_name"], metrics["v_ratio"], thresholds.max_v_ratio))
     if metrics["r_total"] > thresholds.max_r_ohm:
         v.append(RoutingViolation.r_total(metrics["net_name"], metrics["r_total"], thresholds.max_r_ohm))
-    if metrics["c_total"] > thresholds.max_c_ff:
-        v.append(RoutingViolation.c_total(metrics["net_name"], metrics["c_total"], thresholds.max_c_ff))
-    if metrics["effective_tau_ps"] > thresholds.max_tau_ps:
-        v.append(RoutingViolation.tau_ps(metrics["net_name"], metrics["effective_tau_ps"], thresholds.max_tau_ps))
+    if not thresholds.c_ff.contains(metrics["c_total"]):
+        v.append(RoutingViolation.c_ff(metrics["net_name"], metrics["c_total"], thresholds.c_ff))
+    if not thresholds.tau_ps.contains(metrics["effective_tau_ps"]):
+        v.append(RoutingViolation.tau_ps(metrics["net_name"], metrics["effective_tau_ps"], thresholds.tau_ps))
     if metrics["via_coverage"] < thresholds.min_via_coverage:
         v.append(RoutingViolation.via_coverage(metrics["net_name"], metrics["via_coverage"], thresholds.min_via_coverage))
     if metrics["similarity_score"] < thresholds.min_similarity:
