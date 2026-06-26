@@ -185,6 +185,37 @@ RANGE_FIELDS = [
 ] # noqa: E501
 
 
+def _build_range_input_group(field):
+    """Build a single row: label + RangeSlider + two number Inputs."""
+    from dash import dcc, html
+    name, label = field["name"], field["label"]
+    rng = getattr(routing_state.get_thresholds(), name)
+    s_min, s_max, step, fmt = field["slider_min"], field["slider_max"], field["step"], field["fmt"]
+    marks = {
+        s_min: f"{s_min:g}",
+        (s_min + s_max) / 2: f"{(s_min + s_max) / 2:g}",
+        s_max: f"{s_max:g}",
+    }
+    return html.Div([
+        html.Label(label, className="form-label"),
+        dcc.RangeSlider(
+            id=f"slider-{name}",
+            min=s_min, max=s_max, step=step,
+            value=[rng.low, rng.high], marks=marks,
+            tooltip={"placement": "bottom", "always_visible": False},
+        ),
+        html.Div([
+            html.Span("Low: "),
+            dcc.Input(id=f"input-{name}-low", type="number",
+                      value=rng.low, min=s_min, max=s_max, step=step),
+            html.Span("High: ", style={"marginLeft": "12px"}),
+            dcc.Input(id=f"input-{name}-high", type="number",
+                      value=rng.high, min=s_min, max=s_max, step=step),
+        ], style={"display": "flex", "alignItems": "center",
+                  "marginTop": "4px"}),
+    ], className="form-group", style={"marginBottom": "12px"})
+
+
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
     """Pure helper: return (locked_button_class, editable_button_class).
 

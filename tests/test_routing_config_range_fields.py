@@ -13,3 +13,14 @@ def test_thresh_fields_removed():
     """THRESHOLD_FIELDS is replaced by RANGE_FIELDS."""
     from app import routing_config
     assert not hasattr(routing_config, "THRESHOLD_FIELDS")
+
+
+def test_build_range_input_group_uses_slider_and_inputs():
+    from app.routing_config import _build_range_input_group, RANGE_FIELDS
+    el = _build_range_input_group(RANGE_FIELDS[0])  # h_ratio
+    s = str(el)
+    assert 'id="slider-h_ratio"' in s
+    assert 'id="input-h_ratio-low"' in s
+    assert 'id="input-h_ratio-high"' in s
+    # dcc.RangeSlider renders as a div with class 'rc-slider'
+    assert "rc-slider" in s
