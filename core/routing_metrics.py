@@ -16,6 +16,21 @@ from core.via_coverage import analyze_via_coverage
 from core.visualization import is_via_layer
 
 
+# Mapping from RoutingThresholds field name to the metrics dict key.
+# threshold field names use r_ohm / c_ff / tau_ps (range-based),
+# while metrics dict keys retain the original r_total / c_total /
+# effective_tau_ps names (no need to rename inside the metrics module).
+_THRESHOLD_TO_METRIC_KEY = {
+    "h_ratio": "h_ratio",
+    "v_ratio": "v_ratio",
+    "r_ohm": "r_total",
+    "c_ff": "c_total",
+    "tau_ps": "effective_tau_ps",
+    "via_coverage": "via_coverage",
+    "similarity": "similarity_score",
+}
+
+
 def split_metal_via_polygons(polygons: List["Polygon"]) -> Tuple[List["Polygon"], List["Polygon"]]:
     """Split a mixed polygon list into metal shapes and via shapes.
 
@@ -85,67 +100,54 @@ def coerce_vias(vias_in, tech_layers: Dict) -> list:
 
 
 def check_gates(metrics: Dict[str, Any], thresholds: "RoutingThresholds",
-                has_golden: bool = False) -> Tuple[bool, List[str]]:
-    """Check all metrics against thresholds. Returns (pass, fail_reasons).
+                has_golden: bool = False) -> Tuple[List[str], List[str]]:
+    """Each metric is checked against its [low, high] range.
 
-    Gates are split into:
-    - HARD: missing_via, R, C, tau — always required (real electrical violations)
-    - SOFT: h_ratio, v_ratio, via_coverage — bypassed when has_golden AND
-      similarity >= min_similarity (i.e. the net matches the golden's pattern)
-    - SIMILARITY: always required
-
-    Backward-compatible: `has_golden=False` preserves original strict behavior.
+    Returns:
+        (hard_reasons, soft_reasons):
+            - hard: r_ohm / c_ff / tau_ps / similarity / missing_via violations
+            - soft: h_ratio / v_ratio / via_coverage violations
+              (caller may bypass soft if has_golden=True and similarity passes)
     """
     hard_reasons: List[str] = []
     soft_reasons: List[str] = []
-    sim_reasons: List[str] = []
 
-    # HARD gates — always required
-    if metrics.get("missing_via_count", 0) > 0:
-        hard_reasons.append(
-            f"missing_via {metrics['missing_via_count']} > 0"
-        )
-    if metrics["r_total"] > thresholds.max_r_ohm:
-        hard_reasons.append(
-            f"R {metrics['r_total']:.2f}Ω > max {thresholds.max_r_ohm:.2f}Ω"
-        )
-    if metrics["c_total"] > thresholds.max_c_ff:
-        hard_reasons.append(
-            f"C {metrics['c_total']:.2f}fF > max {thresholds.max_c_ff:.2f}fF"
-        )
-    if metrics["effective_tau_ps"] > thresholds.max_tau_ps:
-        hard_reasons.append(
-            f"τ {metrics['effective_tau_ps']:.2f}ps > max {thresholds.max_tau_ps:.2f}ps"
-        )
+    # HARD: r_ohm / c_ff / tau_ps
+    for thresh_key, display in [("r_ohm", "R"), ("c_ff", "C"), ("tau_ps", "\u03c4")]:
+        rng = getattr(thresholds, thresh_key)
+        measured = metrics[_THRESHOLD_TO_METRIC_KEY[thresh_key]]
+        if not rng.contains(measured):
+            d = rng.violation_direction(measured)
+            hard_reasons.append(
+                f"{display} {measured:.2f} {d} of [{rng.low}, {rng.high}]"
+            )
 
-    # SOFT gates — direction/coverage (can be bypassed by golden similarity)
-    if metrics["h_ratio"] > thresholds.max_h_ratio:
-        soft_reasons.append(
-            f"h_ratio {metrics['h_ratio']:.2%} > max {thresholds.max_h_ratio:.2%}"
-        )
-    if metrics["v_ratio"] > thresholds.max_v_ratio:
-        soft_reasons.append(
-            f"v_ratio {metrics['v_ratio']:.2%} > max {thresholds.max_v_ratio:.2%}"
-        )
-    if metrics["via_coverage"] < thresholds.min_via_coverage:
-        soft_reasons.append(
-            f"via coverage {metrics['via_coverage']:.2%} < min {thresholds.min_via_coverage:.2%}"
+    # SOFT: h_ratio / v_ratio / via_coverage
+    for thresh_key in ("h_ratio", "v_ratio", "via_coverage"):
+        rng = getattr(thresholds, thresh_key)
+        measured = metrics[_THRESHOLD_TO_METRIC_KEY[thresh_key]]
+        if not rng.contains(measured):
+            d = rng.violation_direction(measured)
+            soft_reasons.append(
+                f"{thresh_key} {measured} {d} of [{rng.low}, {rng.high}]"
+            )
+
+    # Similarity (HARD)
+    sim_rng = thresholds.similarity
+    sim_measured = metrics[_THRESHOLD_TO_METRIC_KEY["similarity"]]
+    if not sim_rng.contains(sim_measured):
+        d = sim_rng.violation_direction(sim_measured)
+        hard_reasons.append(
+            f"similarity {sim_measured} {d} of "
+            f"[{sim_rng.low}, {sim_rng.high}]"
         )
 
-    # SIMILARITY gate
-    if metrics["similarity_score"] < thresholds.min_similarity:
-        sim_reasons.append(
-            f"similarity {metrics['similarity_score']:.1f} < min {thresholds.min_similarity:.1f}"
-        )
+    # missing_via count check (preserved from old logic, always hard)
+    miss = metrics.get("missing_via_count", 0)
+    if miss and miss > 0:
+        hard_reasons.append(f"missing_via {miss} > 0")
 
-    # Decision
-    if hard_reasons or sim_reasons:
-        # Any hard or similarity failure — return all reasons
-        return False, hard_reasons + sim_reasons + soft_reasons
-    if soft_reasons and not (has_golden and metrics["similarity_score"] >= thresholds.min_similarity):
-        # Soft fails without golden bypass
-        return False, soft_reasons
-    return True, []
+    return hard_reasons, soft_reasons
 
 
 def _empty_result(net_name: str, reason: str) -> Dict[str, Any]:

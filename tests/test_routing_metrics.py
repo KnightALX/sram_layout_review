@@ -330,3 +330,68 @@ def test_rc_values_match_between_properties_and_routing_review():
 
     # cleanup
     app_state.clear_nets()
+
+
+def test_check_gates_in_range_passes():
+    """Value in [low, high] is hard/soft pass."""
+    from config.routing_thresholds import Range, RoutingThresholds
+    from core.routing_metrics import check_gates
+
+    thresholds = RoutingThresholds(
+        h_ratio=Range(0.0, 0.15),
+        v_ratio=Range(0.0, 1.0),
+        r_ohm=Range(0.0, 100.0),
+        c_ff=Range(0.0, 500.0),
+        tau_ps=Range(0.0, 12.5),
+        via_coverage=Range(0.85, 1.0),
+        similarity=Range(80.0, 100.0),
+    )
+    metrics = {
+        "h_ratio": 0.10,           # in range
+        "v_ratio": 0.90,           # in range
+        "r_total": 50.0,           # in range
+        "c_total": 250.0,          # in range
+        "effective_tau_ps": 8.0,   # in range
+        "via_coverage": 0.95,      # in range
+        "similarity_score": 95.0,  # in range
+        "missing_via_count": 0,
+    }
+    hard, soft = check_gates(metrics, thresholds)
+    assert hard == []
+    assert soft == []
+
+
+def test_check_gates_above_high_fails():
+    """Value above range.high causes a violation."""
+    from config.routing_thresholds import Range, RoutingThresholds
+    from core.routing_metrics import check_gates
+
+    thresholds = RoutingThresholds(
+        r_ohm=Range(0.0, 100.0),
+    )
+    metrics = {
+        "h_ratio": 0.10, "v_ratio": 0.90, "r_total": 150.0,
+        "c_total": 250.0, "effective_tau_ps": 8.0,
+        "via_coverage": 0.95, "similarity_score": 95.0,
+        "missing_via_count": 0,
+    }
+    hard, _soft = check_gates(metrics, thresholds)
+    assert any("150" in reason and "high" in reason for reason in hard)
+
+
+def test_check_gates_below_low_fails():
+    """Value below range.low causes a violation (e.g. low via_coverage)."""
+    from config.routing_thresholds import Range, RoutingThresholds
+    from core.routing_metrics import check_gates
+
+    thresholds = RoutingThresholds(
+        via_coverage=Range(0.85, 1.0),
+    )
+    metrics = {
+        "h_ratio": 0.10, "v_ratio": 0.90, "r_total": 50.0,
+        "c_total": 250.0, "effective_tau_ps": 8.0,
+        "via_coverage": 0.50, "similarity_score": 95.0,
+        "missing_via_count": 0,
+    }
+    _, soft = check_gates(metrics, thresholds)
+    assert any("0.5" in reason and "low" in reason for reason in soft)
