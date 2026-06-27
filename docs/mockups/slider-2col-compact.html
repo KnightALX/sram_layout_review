@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Range Slider Compact 2-Column Redesign</title>
+<style>
+/* ====================================================================
+   EDA Theme tokens (mirrors assets/eda-theme.css)
+   ==================================================================== */
+:root {
+  --bg-primary:    #1a1a2e;
+  --bg-secondary:  #16213e;
+  --bg-tertiary:   #0f3460;
+  --bg-elevated:   #1e2a47;
+  --accent-primary:   #3b82f6;
+  --accent-secondary: #06b6d4;
+  --status-pass:   #22c55e;
+  --status-fail:   #ef4444;
+  --status-warning:#f59e0b;
+  --border-primary:#2d4a6f;
+  --border-secondary:#1e2a47;
+  --text-primary:  #e2e8f0;
+  --text-secondary:#94a3b8;
+  --text-muted:    #64748b;
+  --shadow-card:   0 1px 0 rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.22);
+}
+.theme-light {
+  --bg-primary:    #f8fafc;
+  --bg-secondary:  #ffffff;
+  --bg-tertiary:   #f1f5f9;
+  --bg-elevated:   #f1f5f9;
+  --accent-primary:   #2563eb;
+  --accent-secondary: #0891b2;
+  --border-primary:#cbd5e1;
+  --border-secondary:#e2e8f0;
+  --text-primary:  #1e293b;
+  --text-secondary:#475569;
+  --text-muted:    #94a3b8;
+  --shadow-card:   0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(15,23,42,0.08);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 20px;
+  line-height: 1.5;
+  font-size: 13px;
+  transition: background-color .25s ease, color .25s ease;
+}
+h1 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 18px; }
+.toolbar { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+.toolbar button {
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border-primary); border-radius: 4px;
+  padding: 6px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.toolbar button:hover { border-color: var(--accent-primary); }
+.toolbar .hint { color: var(--text-muted); font-size: 11px; margin-left: 8px; }
+
+/* Two-panel grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  transition: background-color .25s ease, border-color .25s ease;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.panel-header .title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.panel-header .pill {
+  font-size: 10px; background: var(--bg-tertiary);
+  color: var(--text-secondary); padding: 2px 8px; border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ====================================================================
+   Compact 2-column row design
+   ==================================================================== */
+.ranges-container { display: flex; flex-direction: column; gap: 10px; }
+
+.range-row {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+.range-row:hover { border-color: var(--accent-primary); }
+
+.metric-cell {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+.metric-cell + .metric-cell {
+  border-left: 1px solid var(--border-secondary);
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+.metric-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.metric-help {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.metric-bounds {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.metric-bounds b { color: var(--accent-secondary); font-weight: 500; }
+
+/* slider visual */
+.slider {
+  position: relative;
+  height: 18px;
+  margin: 4px 0 2px 0;
+}
+.slider .track-bg {
+  position: absolute;
+  top: 6px;
+  left: 0; right: 0;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  border: 1px solid var(--border-secondary);
+}
+.slider .track-fill {
+  position: absolute;
+  top: 6px;
+  height: 6px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(59,130,246,0.3);
+}
+.slider .handle {
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  transform: translateX(-50%);
+  cursor: grab;
+}
+.slider .handle::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 4px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Tick row */
+.tick-row {
+  position: relative;
+  height: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.tick-row span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tick-row span:first-child { left: 0; transform: none; }
+.tick-row span:last-child  { right: 0; left: auto; transform: none; }
+.tick-row span.mid         { left: 50%; }
+
+/* Logic row (compact single line) */
+.logic-compact {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.logic-compact code {
+  background: var(--bg-tertiary);
+  color: var(--accent-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.logic-compact .ic { color: var(--accent-secondary); }
+
+/* ====================================================================
+   VARIANT A — Pure slider (no value display except tooltip)
+   ==================================================================== */
+.opt-a .logic-compact { color: var(--text-muted); }
+
+/* ====================================================================
+   VARIANT B — Slider with mini value pills at endpoints (read-only display)
+   ==================================================================== */
+.opt-b .slider .pill {
+  position: absolute;
+  top: -16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-secondary);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.opt-b .slider .pill.low  { left: 10%; }
+.opt-b .slider .pill.high { left: 80%; }
+
+/* Constraint visualization */
+.metric-cell.is-invalid { background: rgba(239,68,68,0.06); }
+.metric-cell.is-warning { background: rgba(245,158,11,0.06); }
+.metric-cell.is-invalid .slider .track-fill {
+  background: linear-gradient(90deg, #ef4444, #f59e0b);
+  box-shadow: 0 0 8px rgba(239,68,68,0.3);
+}
+.metric-cell.is-invalid .slider .handle { border-color: var(--status-fail); }
+.metric-cell.is-warning .slider .handle { border-color: var(--status-warning); }
+.metric-cell.is-invalid .logic-compact,
+.metric-cell.is-invalid .logic-compact code { color: var(--status-fail); background: rgba(239,68,68,0.12); }
+.metric-cell.is-warning .logic-compact,
+.metric-cell.is-warning .logic-compact code { color: var(--status-warning); background: rgba(245,158,11,0.12); }
+
+/* tooltip hint */
+.tooltip-hint {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  gap: 12px;
+}
+.tooltip-hint span { color: var(--text-muted); }
+.tooltip-hint kbd {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--text-primary);
+}
+
+/* Section header */
+.section-header {
+  font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-secondary);
+  font-weight: 600; margin-bottom: var(--space-xs, 4px);
+}
+.section-subheader {
+  font-size: 11px; color: var(--text-muted);
+  margin-bottom: 12px; font-style: italic;
+}
+
+/* Theme-light adjustments */
+.theme-light .range-row { background: #ffffff; box-shadow: 0 0 0 1px rgba(37,99,235,0.08); }
+.theme-light .metric-cell + .metric-cell { border-left-color: var(--border-secondary); }
+</style>
+</head>
+<body class="theme-dark">
+
+<h1>Range Slider 紧凑 2 列布局 — 双模式预览</h1>
+<div class="subtitle">每行 2 个 metric · 共享边框 · 数值通过 slider 位置 + tooltip + 数学区间显示</div>
+
+<div class="toolbar">
+  <button onclick="document.body.classList.toggle('theme-light'); document.body.classList.toggle('theme-dark'); document.getElementById('leftPill').textContent = document.body.classList.contains('theme-light') ? 'Light' : 'Dark'; document.getElementById('rightPill').textContent = document.body.classList.contains('theme-light') ? 'Dark' : 'Light';">🌓 切换模式</button>
+  <span class="hint">点击切换为 Light 模式</span>
+</div>
+
+<div class="grid">
+
+  <!-- =========================================== VARIANT A -->
+  <div>
+    <div class="panel-header">
+      <div class="title">VARIANT A · Pure Slider (推荐)</div>
+      <div class="pill" id="leftPill">Dark</div>
+    </div>
+    <div class="panel">
+      <div class="section-header">阈值区间 (Closed Interval)</div>
+      <div class="section-subheader">拖拽手柄粗调 · 悬停看精确值 · 4 行 × 2 列</div>
+
+      <div class="ranges-container">
+        <!-- Row 1: 几何 -->
+        <div class="range-row">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Horizontal Ratio</span><span class="metric-help">横向走线占比</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:10%;right:85%;"></div>
+              <div class="handle" style="left:10%"></div>
+              <div class="handle" style="left:15%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.10 ≤ X ≤ 0.15</code>
+              <span class="ic">⟷</span>
+              <code>w=0.05</code>
+            </div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Vertical Ratio</span><span class="metric-help">纵向走线占比</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:30%;right:20%;"></div>
+              <div class="handle" style="left:30%"></div>
+              <div class="handle" style="left:80%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.30 ≤ X ≤ 0.80</code>
+              <span class="ic">⟷</span>
+              <code>w=0.50</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: 电气 -->
+        <div class="range-row">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Resistance</span><span class="metric-help">走线电阻</span></div>
+              <div class="metric-bounds">bounds <b>[0, 10000]</b> Ω</div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:5%;right:5%;"></div>
+              <div class="handle" style="left:5%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">5000</span><span>10000</span>
+            </div>
+            <div class="logic-compact">
+              <code>500 ≤ X ≤ 9500</code>
+              <span class="ic">⟷</span>
+              <code>w=9000</code>
+            </div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Capacitance</span><span class="metric-help">走线电容</span></div>
+              <div class="metric-bounds">bounds <b>[0, 100000]</b> fF</div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:10%;right:10%;"></div>
+              <div class="handle" style="left:10%"></div>
+              <div class="handle" style="left:90%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">50000</span><span>100000</span>
+            </div>
+            <div class="logic-compact">
+              <code>10000 ≤ X ≤ 90000</code>
+              <span class="ic">⟷</span>
+              <code>w=80000</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: 时序 -->
+        <div class="range-row">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Delay (Tau)</span><span class="metric-help">信号延迟</span></div>
+              <div class="metric-bounds">bounds <b>[0, 1000]</b> ps</div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:5%;right:30%;"></div>
+              <div class="handle" style="left:5%"></div>
+              <div class="handle" style="left:70%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">500</span><span>1000</span>
+            </div>
+            <div class="logic-compact">
+              <code>50 ≤ X ≤ 700</code>
+              <span class="ic">⟷</span>
+              <code>w=650</code>
+            </div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Via Coverage</span><span class="metric-help">通孔覆盖率</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:50%;right:5%;"></div>
+              <div class="handle" style="left:50%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.50 ≤ X ≤ 0.95</code>
+              <span class="ic">⟷</span>
+              <code>w=0.45</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: 单 metric -->
+        <div class="range-row" style="grid-template-columns: 1fr;">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Similarity</span><span class="metric-help">走线相似度</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:80%;right:5%;"></div>
+              <div class="handle" style="left:80%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.80 ≤ X ≤ 0.95</code>
+              <span class="ic">⟷</span>
+              <code>w=0.15</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tooltip-hint">
+        <span>悬停手柄</span>
+        <kbd>0.10</kbd>
+        <span>查看精确值 · 拖拽调节区间</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================== VARIANT B -->
+  <div>
+    <div class="panel-header">
+      <div class="title">VARIANT B · Slider + Mini Value Pills</div>
+      <div class="pill" id="rightPill">Light</div>
+    </div>
+    <div class="panel">
+      <div class="section-header">阈值区间 (Closed Interval)</div>
+      <div class="section-subheader">手柄上方小数值标签 · 始终可见 · 不可编辑</div>
+
+      <div class="ranges-container opt-b">
+
+        <!-- Row 1: 几何 with invalid demo -->
+        <div class="range-row">
+          <div class="metric-cell is-invalid">
+            <div class="metric-header">
+              <div><span class="metric-name">Horizontal Ratio</span><span class="metric-help">横向走线占比</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <span class="pill low">0.50</span>
+              <span class="pill high">0.20</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:50%;right:80%;"></div>
+              <div class="handle" style="left:50%"></div>
+              <div class="handle" style="left:20%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.50 ≤ X ≤ 0.20</code>
+              <span class="ic">⚠ 越界</span>
+            </div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Vertical Ratio</span><span class="metric-help">纵向走线占比</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <span class="pill low">0.30</span>
+              <span class="pill high">0.80</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:30%;right:20%;"></div>
+              <div class="handle" style="left:30%"></div>
+              <div class="handle" style="left:80%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.30 ≤ X ≤ 0.80</code>
+              <span class="ic">⟷</span>
+              <code>w=0.50</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2: 电气 -->
+        <div class="range-row">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Resistance</span><span class="metric-help">走线电阻</span></div>
+              <div class="metric-bounds">bounds <b>[0, 10000]</b> Ω</div>
+            </div>
+            <div class="slider">
+              <span class="pill low">500</span>
+              <span class="pill high">9500</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:5%;right:5%;"></div>
+              <div class="handle" style="left:5%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">5000</span><span>10000</span>
+            </div>
+            <div class="logic-compact">
+              <code>500 ≤ X ≤ 9500</code>
+              <span class="ic">⟷</span>
+              <code>w=9000</code>
+            </div>
+          </div>
+          <div class="metric-cell is-warning">
+            <div class="metric-header">
+              <div><span class="metric-name">Capacitance</span><span class="metric-help">走线电容</span></div>
+              <div class="metric-bounds">bounds <b>[0, 100000]</b> fF</div>
+            </div>
+            <div class="slider">
+              <span class="pill low">60000</span>
+              <span class="pill high">64000</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:60%;right:36%;"></div>
+              <div class="handle" style="left:60%"></div>
+              <div class="handle" style="left:64%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">50000</span><span>100000</span>
+            </div>
+            <div class="logic-compact">
+              <code>60000 ≤ X ≤ 64000</code>
+              <span class="ic">⚠ 区间过窄</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: 时序 -->
+        <div class="range-row">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Delay (Tau)</span><span class="metric-help">信号延迟</span></div>
+              <div class="metric-bounds">bounds <b>[0, 1000]</b> ps</div>
+            </div>
+            <div class="slider">
+              <span class="pill low">50</span>
+              <span class="pill high">700</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:5%;right:30%;"></div>
+              <div class="handle" style="left:5%"></div>
+              <div class="handle" style="left:70%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0</span><span class="mid">500</span><span>1000</span>
+            </div>
+            <div class="logic-compact">
+              <code>50 ≤ X ≤ 700</code>
+              <span class="ic">⟷</span>
+              <code>w=650</code>
+            </div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Via Coverage</span><span class="metric-help">通孔覆盖率</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <span class="pill low">0.50</span>
+              <span class="pill high">0.95</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:50%;right:5%;"></div>
+              <div class="handle" style="left:50%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.50 ≤ X ≤ 0.95</code>
+              <span class="ic">⟷</span>
+              <code>w=0.45</code>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 4: 单 -->
+        <div class="range-row" style="grid-template-columns: 1fr;">
+          <div class="metric-cell">
+            <div class="metric-header">
+              <div><span class="metric-name">Similarity</span><span class="metric-help">走线相似度</span></div>
+              <div class="metric-bounds">bounds <b>[0.00, 1.00]</b></div>
+            </div>
+            <div class="slider">
+              <span class="pill low">0.80</span>
+              <span class="pill high">0.95</span>
+              <div class="track-bg"></div>
+              <div class="track-fill" style="left:80%;right:5%;"></div>
+              <div class="handle" style="left:80%"></div>
+              <div class="handle" style="left:95%"></div>
+            </div>
+            <div class="tick-row">
+              <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+            </div>
+            <div class="logic-compact">
+              <code>0.80 ≤ X ≤ 0.95</code>
+              <span class="ic">⟷</span>
+              <code>w=0.15</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tooltip-hint">
+        <span>数值始终可见</span>
+        <kbd>无需 hover</kbd>
+        <span>手柄上方小标签 · 只读 · 不可编辑</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="height: 1px; background: var(--border-secondary); margin: 24px 0;"></div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+
+  <div class="panel">
+    <div class="panel-header"><div class="title">交互逻辑</div></div>
+    <ol style="padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.85;">
+      <li><b style="color: var(--text-primary);">拖拽手柄</b> → 调节 low/high 边界 · 实时同步数学区间</li>
+      <li><b style="color: var(--text-primary);">悬停手柄</b> → tooltip 显示精确数值（Variant A 默认）</li>
+      <li><b style="color: var(--text-primary);">小数值标签</b>（Variant B）始终显示当前值 · 随手柄移动</li>
+      <li><b style="color: var(--text-primary);">数值不可直接编辑</b> · 全部通过拖拽设置 · 减少视觉元素</li>
+      <li><b style="color: var(--text-primary);">约束违反</b>：low &gt; high → cell 背景泛红 + 滑轨渐变变红 + logic 行 ⚠</li>
+      <li><b style="color: var(--text-primary);">区间过窄</b>（&lt;5%）：cell 背景泛黄 + logic 行 ⚠ 提示</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header"><div class="title">设计取舍</div></div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+      <thead>
+        <tr style="text-align: left; color: var(--text-muted); font-size: 10px; text-transform: uppercase;">
+          <th style="padding: 5px 6px;">维度</th><th style="padding: 5px 6px;">A · 纯 slider</th><th style="padding: 5px 6px;">B · mini pills</th>
+        </tr>
+      </thead>
+      <tbody style="font-family: 'JetBrains Mono', monospace; color: var(--text-secondary);">
+        <tr><td style="padding: 5px 6px;">每行紧凑度</td><td style="padding: 5px 6px;">★★★ 最高</td><td style="padding: 5px 6px;">★★ 中等</td></tr>
+        <tr><td style="padding: 5px 6px;">数值可见性</td><td style="padding: 5px 6px;">需 hover</td><td style="padding: 5px 6px;">始终可见</td></tr>
+        <tr><td style="padding: 5px 6px;">精确输入</td><td style="padding: 5px 6px;">通过 tooltip</td><td style="padding: 5px 6px;">读只显示</td></tr>
+        <tr><td style="padding: 5px 6px;">视觉干扰</td><td style="padding: 5px 6px;">最小</td><td style="padding: 5px 6px;">轻微（pill 跟随手柄）</td></tr>
+        <tr><td style="padding: 5px 6px;">实现复杂度</td><td style="padding: 5px 6px;">低（只用 slider）</td><td style="padding: 5px 6px;">中（需定位 pill）</td></tr>
+        <tr><td style="padding: 5px 6px;">与项目主体</td><td style="padding: 5px 6px;">更简洁</td><td style="padding: 5px 6px;">更直观</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+</body>
+</html>
