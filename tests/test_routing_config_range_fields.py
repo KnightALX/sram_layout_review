@@ -33,3 +33,63 @@ def test_build_range_input_group_uses_slider_and_inputs():
     assert "id='input-h_ratio-high'" in s
     # RangeSlider is a component of the rendered element
     assert "RangeSlider" in s
+
+
+def test_build_range_input_group_has_new_structure_ids():
+    """New row structure: row-{name}, slider-{name}, badge-input-{name}-{low|high}, logic-{name}."""
+    from app.routing_config import _build_range_input_group, RANGE_FIELDS
+    for field in RANGE_FIELDS:
+        name = field["name"]
+        el = _build_range_input_group(field)
+        s = str(el)
+        assert f"id='row-{name}'" in s, f"row-{name} container missing"
+        assert f"id='slider-{name}'" in s, f"slider-{name} missing"
+        assert f"id='badge-input-{name}-low'" in s, f"badge-input-{name}-low missing"
+        assert f"id='badge-input-{name}-high'" in s, f"badge-input-{name}-high missing"
+        assert f"id='logic-{name}'" in s, f"logic-{name} missing"
+        # Legacy input-{name}-* IDs must NOT appear
+        assert f"id='input-{name}-low'" not in s, f"legacy input-{name}-low still present"
+        assert f"id='input-{name}-high'" not in s, f"legacy input-{name}-high still present"
+
+
+def test_build_range_input_group_contains_help_and_bounds_text():
+    """Each row renders help text (in row-header) and bounds text (e.g. '[0.00, 1.00]')."""
+    from app.routing_config import _build_range_input_group, RANGE_FIELDS
+    for field in RANGE_FIELDS:
+        el = _build_range_input_group(field)
+        s = str(el)
+        # help text appears in row-header
+        assert field["help"] in s, f"help '{field['help']}' missing for {field['name']}"
+        # bounds text contains the formatted slider_min and slider_max
+        bounds_min = field["fmt"].format(field["slider_min"])
+        bounds_max = field["fmt"].format(field["slider_max"])
+        assert bounds_min in s, f"slider_min '{bounds_min}' not in bounds for {field['name']}"
+        assert bounds_max in s, f"slider_max '{bounds_max}' not in bounds for {field['name']}"
+
+
+def test_build_range_input_group_contains_tick_row_with_three_spans():
+    """tick-row contains 3 spans: min, mid, max."""
+    from app.routing_config import _build_range_input_group, RANGE_FIELDS
+    field = RANGE_FIELDS[0]  # h_ratio
+    el = _build_range_input_group(field)
+    s = str(el)
+    # tick-row class must be present
+    assert "tick-row" in s
+    # min and max values formatted are visible
+    fmt = field["fmt"]
+    assert fmt.format(field["slider_min"]) in s
+    assert fmt.format(field["slider_max"]) in s
+    # mid value
+    mid = (field["slider_min"] + field["slider_max"]) / 2
+    assert fmt.format(mid) in s
+
+
+def test_build_range_input_group_contains_logic_row_with_math_notation():
+    """logic-row contains the math notation '合规: low ≤ X ≤ high'."""
+    from app.routing_config import _build_range_input_group, RANGE_FIELDS
+    el = _build_range_input_group(RANGE_FIELDS[0])  # h_ratio
+    s = str(el)
+    assert "logic" in s
+    assert "\u5408\u89c4" in s  # 合规
+    assert "\u2264" in s  # ≤ symbol
+    assert "\u27fa" in s  # ⟷ arrow
