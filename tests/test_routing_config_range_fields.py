@@ -1,12 +1,20 @@
 def test_range_fields_has_seven_entries_with_required_keys():
     from app.routing_config import RANGE_FIELDS
     assert len(RANGE_FIELDS) == 7
-    required = {"name", "label", "slider_min", "slider_max", "step", "fmt"}
+    required = {"name", "label", "help", "unit", "slider_min", "slider_max", "step", "fmt"}
     for f in RANGE_FIELDS:
         assert required.issubset(f.keys()), f"missing keys in {f}"
     names = [f["name"] for f in RANGE_FIELDS]
     assert set(names) == {"h_ratio", "v_ratio", "r_ohm", "c_ff", "tau_ps",
                           "via_coverage", "similarity"}
+
+
+def test_range_fields_have_help_and_unit():
+    """Every range field carries Chinese help text and SI unit (may be '')."""
+    from app.routing_config import RANGE_FIELDS
+    for f in RANGE_FIELDS:
+        assert isinstance(f["help"], str) and len(f["help"]) > 0, f"{f['name']} missing help"
+        assert isinstance(f["unit"], str), f"{f['name']} unit must be str (possibly empty)"
 
 
 def test_thresh_fields_removed():

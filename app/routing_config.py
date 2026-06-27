@@ -107,13 +107,27 @@ def _handle_routing_preset_or_thresh(
 # two dcc.Input fields for precise text input. The fmt field controls
 # how values are displayed in the inputs.
 RANGE_FIELDS = [
-    {"name": "h_ratio",      "label": "H Ratio",         "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
-    {"name": "v_ratio",      "label": "V Ratio",         "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
-    {"name": "r_ohm",        "label": "R (\u03a9)",      "slider_min": 0.0,    "slider_max": 10000.0, "step": 0.1,   "fmt": "{:.1f}"},
-    {"name": "c_ff",         "label": "C (fF)",          "slider_min": 0.0,    "slider_max": 100000.0,"step": 1,     "fmt": "{:.1f}"},
-    {"name": "tau_ps",       "label": "\u03c4 (ps)",     "slider_min": 0.0,    "slider_max": 1000.0,  "step": 0.1,   "fmt": "{:.1f}"},
-    {"name": "via_coverage", "label": "Via Coverage",    "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01,  "fmt": "{:.2f}"},
-    {"name": "similarity",   "label": "Similarity",      "slider_min": 0.0,    "slider_max": 100.0,   "step": 1,     "fmt": "{:.0f}"},
+    {"name": "h_ratio",      "label": "Horizontal Ratio",
+     "help": "\u6a2a\u5411\u8d70\u7ebf\u5360\u6bd4", "unit": "",
+     "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01, "fmt": "{:.2f}"},
+    {"name": "v_ratio",      "label": "Vertical Ratio",
+     "help": "\u7eb5\u5411\u8d70\u7ebf\u5360\u6bd4", "unit": "",
+     "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01, "fmt": "{:.2f}"},
+    {"name": "r_ohm",        "label": "Resistance",
+     "help": "\u8d70\u7ebf\u7535\u963b",     "unit": "\u03a9",
+     "slider_min": 0.0,    "slider_max": 10000.0, "step": 50,   "fmt": "{:g}"},
+    {"name": "c_ff",         "label": "Capacitance",
+     "help": "\u8d70\u7ebf\u7535\u5bb9",     "unit": "fF",
+     "slider_min": 0,      "slider_max": 100000,  "step": 100,  "fmt": "{:g}"},
+    {"name": "tau_ps",       "label": "Delay (Tau)",
+     "help": "\u4fe1\u53f7\u5ef6\u8fdf",     "unit": "ps",
+     "slider_min": 0,      "slider_max": 1000,    "step": 5,    "fmt": "{:g}"},
+    {"name": "via_coverage", "label": "Via Coverage",
+     "help": "\u901a\u5b54\u8986\u76d6\u7387",   "unit": "",
+     "slider_min": 0.0,    "slider_max": 1.0,     "step": 0.01, "fmt": "{:.2f}"},
+    {"name": "similarity",   "label": "Similarity",
+     "help": "\u8d70\u7ebf\u76f8\u4f3c\u5ea6",   "unit": "",
+     "slider_min": 0.0,    "slider_max": 100.0,   "step": 1,    "fmt": "{:0f}"},
 ] # noqa: E501
 
 
