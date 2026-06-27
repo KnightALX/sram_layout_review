@@ -303,13 +303,13 @@ def _build_badge(field_name, bound, key_label, value, unit, s_min, s_max, step):
        **{"data-field": field_name, "data-bound": bound})
 
 
-def _sync_slider_to_input(value):
-    """Slider -> Inputs: simply unpack the [low, high] list."""
+def _sync_slider_to_badges(value):
+    """Slider -> Badge inputs: unpack the [low, high] list."""
     return value[0], value[1]
 
 
-def _sync_input_to_slider(low, high):
-    """Inputs -> Slider. Returns [low, high] or None to signal PreventUpdate."""
+def _sync_badges_to_slider(low, high):
+    """Badge inputs -> Slider. Returns [low, high] or None to signal PreventUpdate."""
     from dash.exceptions import PreventUpdate
     if low is None or high is None:
         raise PreventUpdate
@@ -394,10 +394,10 @@ def _render_state(range_input_values):
       [5]   thresh-apply-status children
       [6]   routing-preset value
       [7..13]  7 slider-{name} values (each [low, high])
-      [14..20] 7 input-{name}-low values
-      [21..27] 7 input-{name}-high values
-      [28..34] 7 input-{name}-low disabled
-      [35..41] 7 input-{name}-high disabled
+      [14..20] 7 badge-input-{name}-low values
+      [21..27] 7 badge-input-{name}-high values
+      [28..34] 7 badge-input-{name}-low disabled
+      [35..41] 7 badge-input-{name}-high disabled
     """
     thresholds = routing_state.get_thresholds()
     is_frozen = routing_state.is_frozen
@@ -488,7 +488,7 @@ def _dispatch_action(trigger_id, trigger_value, range_values):
     if trigger_id == "btn-apply-thresholds.n_clicks":
         _apply_thresholds(tuple(range_values))
         return
-    if trigger_id and trigger_id.startswith("input-") and trigger_id.endswith(".value"):
+    if trigger_id and trigger_id.startswith("badge-input-") and trigger_id.endswith(".value"):
         return
     if trigger_id == "tabs.value":
         return
@@ -501,8 +501,8 @@ def _compute_rehydrate_outputs():
     output list used by preset/mode/apply callbacks:
       [mode-frozen, mode-editable, preset-status, config-status,
        unsaved-badge, apply-status, preset-value]
-      + 7 slider-{name} values + 7 input-{name}-low values
-      + 7 input-{name}-high values + 14 disabled flags.
+      + 7 slider-{name} values + 7 badge-input-{name}-low values
+      + 7 badge-input-{name}-high values + 14 disabled flags.
     Clears transient badges on re-entry for clean re-hydration while restoring
     authoritative values + mode + disabled from routing_state.
     """
@@ -527,7 +527,7 @@ def _compute_rehydrate_outputs():
 
 def get_threshold_input_ids() -> List[str]:
     """Return the dcc.Input IDs for all threshold fields (used in callbacks)."""
-    return [f"input-{fld['name']}-low" for fld in RANGE_FIELDS] + [f"input-{fld['name']}-high" for fld in RANGE_FIELDS]
+    return [f"badge-input-{fld['name']}-low" for fld in RANGE_FIELDS] + [f"badge-input-{fld['name']}-high" for fld in RANGE_FIELDS]
 
 
 def _preset_options():
@@ -880,10 +880,10 @@ def register_routing_config_callbacks(app):
     #         to dispatch state mutations via _dispatch_action + render via
     #         _render_state. NO allow_duplicate=True anywhere. ---
     n = len(RANGE_FIELDS)
-    low_outputs = [Output(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-    high_outputs = [Output(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS]
-    low_dis = [Output(f"input-{f['name']}-low", "disabled") for f in RANGE_FIELDS]
-    high_dis = [Output(f"input-{f['name']}-high", "disabled") for f in RANGE_FIELDS]
+    low_outputs = [Output(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+    high_outputs = [Output(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS]
+    low_dis = [Output(f"badge-input-{f['name']}-low", "disabled") for f in RANGE_FIELDS]
+    high_dis = [Output(f"badge-input-{f['name']}-high", "disabled") for f in RANGE_FIELDS]
 
     @app.callback(
         [Output("mode-frozen", "className"),
@@ -900,10 +900,10 @@ def register_routing_config_callbacks(app):
          Input("mode-editable", "n_clicks"),
          Input("btn-apply-thresholds", "n_clicks"),
          Input("tabs", "value")]
-        + [Input(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-        + [Input(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS],
-        [State(f"input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-        + [State(f"input-{f['name']}-high", "value") for f in RANGE_FIELDS],
+        + [Input(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+        + [Input(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS],
+        [State(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
+        + [State(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS],
         prevent_initial_call=False,
     )
     def _routing_config_ui(
@@ -924,7 +924,7 @@ def register_routing_config_callbacks(app):
         from dash import no_update as _no_update
 
         n = len(RANGE_FIELDS)
-        # Last 2*n args are the 14 State input values: [low_0..low_6, high_0..high_6]
+        # Last 2*n args are the 14 State badge-input values: [low_0..low_6, high_0..high_6]
         range_state = list(input_args[-2 * n:])
 
         if not _ctx.triggered:
@@ -941,7 +941,7 @@ def register_routing_config_callbacks(app):
         _dispatch_action(trigger_id, trigger_value, tuple(range_state))
         rendered = _render_state(range_state)
 
-        if trigger_id and trigger_id.startswith("input-") and trigger_id.endswith(".value"):
+        if trigger_id and trigger_id.startswith("badge-input-") and trigger_id.endswith(".value"):
             outs = list(rendered)
             for i in range(n):
                 outs[14 + i] = _no_update
@@ -949,39 +949,39 @@ def register_routing_config_callbacks(app):
             return tuple(outs)
         return rendered
 
-    # --- 7. Slider <-> Inputs bidirectional sync (range fields).
+    # --- 7. Slider <-> Badge inputs bidirectional sync (range fields).
     #         For each RANGE_FIELDS entry, two pure-function callbacks:
-    #           (a) slider-{name}.value        -> input-{name}-low/high.value
-    #           (b) input-{name}-low/high.value -> slider-{name}.value
-    #         Pure logic is in _sync_slider_to_input / _sync_input_to_slider
+    #           (a) slider-{name}.value                 -> badge-input-{name}-low/high.value
+    #           (b) badge-input-{name}-low/high.value -> slider-{name}.value
+    #         Pure logic is in _sync_slider_to_badges / _sync_badges_to_slider
     #         and exercised directly by tests/test_routing_config_sync.py.
     #         prevent_initial_call=True so the sync only fires on real user
     #         interaction (avoids feedback loops on initial render).
     for field in RANGE_FIELDS:
         _name = field["name"]
         _slider_id = f"slider-{_name}"
-        _low_id = f"input-{_name}-low"
-        _high_id = f"input-{_name}-high"
+        _low_id = f"badge-input-{_name}-low"
+        _high_id = f"badge-input-{_name}-high"
 
-        # (a) Slider -> Inputs
+        # (a) Slider -> Badge inputs
         @app.callback(
             [Output(_low_id, "value", allow_duplicate=True),
              Output(_high_id, "value", allow_duplicate=True)],
             Input(_slider_id, "value"),
             prevent_initial_call=True,
         )
-        def _slider_to_inputs(_value, _name=_name):
-            return _sync_slider_to_input(_value)
+        def _slider_to_badges(_value, _name=_name):
+            return _sync_slider_to_badges(_value)
 
-        # (b) Inputs -> Slider (with low>high / None guard via PreventUpdate)
+        # (b) Badge inputs -> Slider (with low>high / None guard via PreventUpdate)
         @app.callback(
             Output(_slider_id, "value", allow_duplicate=True),
             [Input(_low_id, "value"),
              Input(_high_id, "value")],
             prevent_initial_call=True,
         )
-        def _inputs_to_slider(_low, _high, _name=_name):
-            return _sync_input_to_slider(_low, _high)
+        def _badges_to_slider(_low, _high, _name=_name):
+            return _sync_badges_to_slider(_low, _high)
 
     # --- 8. Logic-row + row className updates per field.
     #         Slider value drives the math-notation annotation and the
