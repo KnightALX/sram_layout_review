@@ -691,9 +691,15 @@ def create_routing_config_tab():
             html.Div([
                 # Range slider groups (replaces legacy thresh-{name} inputs)
                 html.Div([
-                    _build_range_input_group(field)
-                    for field in RANGE_FIELDS
-                ], style={"display": "flex", "flexDirection": "column", "gap": "8px"}),
+                    html.Div("\u9608\u503c\u533a\u95f4 (Closed Interval)",
+                             className="section-header"),
+                    html.Div("\u62d6\u62fd\u624b\u67c4\u7c97\u8c03 \u00b7 \u70b9\u51fb Low/High \u5fbd\u7ae0\u7cbe\u786e\u8f93\u5165",
+                             className="section-subheader"),
+                    html.Div([
+                        _build_range_input_group(field)
+                        for field in RANGE_FIELDS
+                    ], id="routing-config-ranges", className="ranges-container"),
+                ], className="config-section"),
                 # Apply button + status
                 html.Div([
                     html.Button("✓ Apply Thresholds", id="btn-apply-thresholds",

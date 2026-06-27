@@ -327,11 +327,25 @@ def test_create_routing_config_tab_uses_range_sliders():
     from app.routing_config import create_routing_config_tab
     el = create_routing_config_tab()
     s = str(el)
-    # 7 sliders, 14 inputs (low + high for each of 7 fields)
+    # 7 sliders, 14 badge-inputs (low + high for each of 7 fields)
     assert s.count("id='slider-") == 7
-    assert s.count("id='input-") == 14
+    assert s.count("id='badge-input-") == 14
     # No thresh- inputs (legacy) — only check actual input fields (dcc.Input
     # renders with `type='number', id='thresh-...'` in its repr). The badge
     # Span (id='thresh-unsaved-badge') and apply-status Div are display-only
     # and are intentionally kept (see Task 4 / design plan).
     assert "type='number', id='thresh-" not in s
+
+
+def test_create_routing_config_tab_has_section_header_for_ranges():
+    """The range sliders area is preceded by a section-header and section-subheader."""
+    from app.routing_config import create_routing_config_tab
+    el = create_routing_config_tab()
+    s = str(el)
+    assert "section-header" in s
+    assert "section-subheader" in s
+    assert "\u9608\u503c\u533a\u95f4" in s  # 阈值区间
+    assert "ranges-container" in s
+    # 7 sliders, 14 badge-inputs (low + high for each of 7 fields)
+    assert s.count("id='slider-") == 7
+    assert s.count("id='badge-input-") == 14
