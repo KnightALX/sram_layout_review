@@ -1874,3 +1874,99 @@ body {
 }
 .theme-light .range-slider-badge:hover { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18); }
 .theme-light .slider-row.is-invalid .range-slider-badge { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18); }
+
+
+/* ============================================================
+   Dash RangeSlider internal class overrides
+   Apply Accent Strip visual treatment to the rc-slider-* DOM
+   ============================================================ */
+.range-slider { margin: 6px 0 !important; }
+
+.rc-slider-rail {
+    background: var(--bg-elevated) !important;
+    height: 6px !important;
+    border-radius: 3px !important;
+    border: 1px solid var(--border-secondary) !important;
+}
+
+.rc-slider-track {
+    background: linear-gradient(90deg,
+        var(--accent-primary),
+        var(--accent-secondary)) !important;
+    height: 6px !important;
+    border-radius: 3px !important;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3) !important;
+}
+
+.rc-slider-handle {
+    width: 18px !important;
+    height: 18px !important;
+    background: var(--bg-secondary) !important;
+    border: 2px solid var(--accent-primary) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5) !important;
+    margin-top: -7px !important;
+}
+.rc-slider-handle::after {
+    content: '' !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    width: 4px !important;
+    height: 4px !important;
+    background: var(--accent-primary) !important;
+    border-radius: 50% !important;
+    transform: translate(-50%, -50%) !important;
+}
+.rc-slider-handle:hover,
+.rc-slider-handle:focus {
+    border-color: var(--accent-secondary) !important;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.20) !important;
+}
+
+.theme-light .rc-slider-handle { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.20) !important; }
+.theme-light .rc-slider-handle:hover,
+.theme-light .rc-slider-handle:focus { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.22) !important; }
+
+.rc-slider-mark-text {
+    color: var(--text-muted) !important;
+    font-size: 9px !important;
+    font-family: var(--font-data) !important;
+}
+.rc-slider-tooltip {
+    background: var(--bg-tertiary) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-primary) !important;
+    font-family: var(--font-data) !important;
+    font-size: 11px !important;
+}
+.rc-slider-tooltip-inner { box-shadow: none !important; }
+
+/* Number input native chrome stripped — modern browsers */
+.badge-input-overlay {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: var(--font-data);
+    font-size: 12px;
+    text-align: right;
+    width: 64px;
+    padding: 0;
+    margin: 0;
+    outline: none;
+    -moz-appearance: textfield;
+}
+.badge-input-overlay::-webkit-outer-spin-button,
+.badge-input-overlay::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.range-slider-badge:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.20);
+    background: var(--bg-tertiary);
+}
+.badge-input-overlay:focus {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+.theme-light .range-slider-badge:focus-within { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22); }
