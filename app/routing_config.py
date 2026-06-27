@@ -154,10 +154,39 @@ def _compute_constraint_status(low, high, s_min, s_max):
 
 
 def _build_logic_row_content(low, high, fmt, status):
-    """Placeholder for Task 5 — return minimal valid content."""
+    """Build the logic-row annotation as a list of Dash components.
+
+    status: 'valid' | 'warning' | 'invalid'
+
+    Returns:
+        list of Dash components suitable for `children=` of an html.Div.
+
+    Layout per status:
+    - 'valid':    合规: {low} ≤ X ≤ {high}  ⟷  区间宽度 {width}
+    - 'invalid':  ⚠ Low ({low}) > High ({high})，区间不合法  ·  请重新设置
+    - 'warning' (low == high): ⚠ 区间宽度为 0，无任何值合规  ·  请调整 Low < High
+    - 'warning' (narrow):      ⚠ 区间过窄 ({width})，可能误杀合规走线  ·  建议扩大区间
+    """
     from dash import html
-    if status != "valid":
-        return [html.Span("placeholder")]
+    if status == "invalid":
+        return [
+            html.Span("\u26a0 Low ("),
+            html.Code(fmt.format(low)),
+            html.Span(") > High ("),
+            html.Code(fmt.format(high)),
+            html.Span("\uff09\uff0c\u533a\u95f4\u4e0d\u5408\u6cd5  \u00b7  \u8bf7\u91cd\u65b0\u8bbe\u7f6e"),
+        ]
+    if status == "warning":
+        if low == high:
+            return [
+                html.Span("\u26a0 \u533a\u95f4\u5bbd\u5ea6\u4e3a 0\uff0c\u65e0\u4efb\u4f55\u503c\u5408\u89c4  \u00b7  \u8bf7\u8c03\u6574 Low < High"),
+            ]
+        return [
+            html.Span("\u26a0 \u533a\u95f4\u8fc7\u7a84 ("),
+            html.Code(fmt.format(high - low)),
+            html.Span("\uff09\uff0c\u53ef\u80fd\u8bef\u6740\u5408\u89c4\u8d70\u7ebf  \u00b7  \u5efa\u8bae\u6269\u5927\u533a\u95f4"),
+        ]
+    # valid
     return [
         html.Span("\u5408\u89c4: "),
         html.Code(f"{fmt.format(low)} \u2264 X \u2264 {fmt.format(high)}"),
