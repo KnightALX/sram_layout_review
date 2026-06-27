@@ -132,7 +132,24 @@ RANGE_FIELDS = [
 
 
 def _compute_constraint_status(low, high, s_min, s_max):
-    """Placeholder for Task 4 — return 'valid' for now."""
+    """Return one of: 'valid', 'invalid', 'warning'.
+
+    Logic:
+    - None input(s)        → 'valid'   (initial render before any user input)
+    - low > high           → 'invalid' (logical impossibility)
+    - low == high          → 'warning' (zero-width interval)
+    - width < 5% of domain → 'warning' (narrow range may reject all values)
+    - otherwise            → 'valid'
+    """
+    if low is None or high is None:
+        return "valid"
+    if low > high:
+        return "invalid"
+    if low == high:
+        return "warning"
+    full_range = s_max - s_min
+    if full_range > 0 and (high - low) < 0.05 * full_range:
+        return "warning"
     return "valid"
 
 
