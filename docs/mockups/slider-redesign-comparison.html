@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Range Slider Redesign — Mockup Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+/* ====================================================================
+   EDA Theme tokens (mirrors assets/eda-theme.css)
+   ==================================================================== */
+:root {
+  --bg-primary:    #1a1a2e;
+  --bg-secondary:  #16213e;
+  --bg-tertiary:   #0f3460;
+  --bg-elevated:   #1e2a47;
+  --accent-primary:   #3b82f6;
+  --accent-secondary: #06b6d4;
+  --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  --status-pass:   #22c55e;
+  --status-fail:   #ef4444;
+  --status-warning:#f59e0b;
+  --border-primary:#2d4a6f;
+  --border-secondary:#1e2a47;
+  --text-primary:  #e2e8f0;
+  --text-secondary:#94a3b8;
+  --text-muted:    #64748b;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-2xl: 24px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --font-display: 'JetBrains Mono', ui-monospace, monospace;
+  --font-body:    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-data:    'JetBrains Mono', ui-monospace, monospace;
+  --shadow-card: 0 1px 0 rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.22);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: var(--space-2xl);
+  line-height: 1.5;
+  font-size: 14px;
+}
+h1 {
+  font-size: 18px;
+  margin-bottom: var(--space-xs);
+  font-weight: 600;
+}
+.subtitle {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: var(--space-2xl);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+}
+.col-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.col-title .dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot-a { background: #3b82f6; }
+.dot-b { background: #06b6d4; }
+.dot-c { background: #94a3b8; }
+
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  box-shadow: var(--shadow-card);
+}
+.note {
+  margin-top: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+}
+
+/* ====================================================================
+   Shared slider pieces (visual only — not interactive)
+   ==================================================================== */
+.slider-row { margin-bottom: var(--space-md); }
+.slider-row:last-child { margin-bottom: 0; }
+
+.row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-sm);
+}
+.row-header .name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.row-header .meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+}
+.row-header .meta b {
+  color: var(--accent-secondary);
+  font-weight: 500;
+}
+
+.slider {
+  position: relative;
+  height: 18px;
+  margin: var(--space-sm) 0;
+}
+.slider .track-bg {
+  position: absolute;
+  top: 6px;
+  left: 0; right: 0;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  border: 1px solid var(--border-secondary);
+}
+.slider .track-fill {
+  position: absolute;
+  top: 6px;
+  height: 6px;
+  background: var(--accent-gradient);
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(59,130,246,0.3);
+}
+.slider .handle {
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  transform: translateX(-50%);
+  cursor: grab;
+}
+.slider .handle::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 4px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.badges {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+.badge {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
+  font-family: var(--font-data);
+  font-size: 12px;
+  cursor: pointer;
+}
+.badge .key {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.badge .val {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.badge .unit {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+/* ====================================================================
+   OPTION A — Inset Card (low contrast, EDA-tool native feel)
+   ==================================================================== */
+.opt-a .slider-row {
+  background: rgba(255,255,255,0.015);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+.opt-a .badge {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+}
+.opt-a .badge:hover { border-color: var(--accent-primary); }
+
+/* ====================================================================
+   OPTION B — Accent Strip Card (metric-card-like, gradient left bar)
+   ==================================================================== */
+.opt-b .slider-row {
+  background: linear-gradient(90deg, rgba(59,130,246,0.08) 0%, rgba(6,182,212,0.02) 100%);
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-md) var(--space-md) calc(var(--space-md) + 4px);
+  position: relative;
+}
+.opt-b .slider-row::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(59,130,246,0.05), transparent 40%);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+.opt-b .badge {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+}
+.opt-b .badge .key { color: var(--accent-secondary); }
+.opt-b .badge:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+
+/* ====================================================================
+   OPTION C — Compact Inline (minimal, tight)
+   ==================================================================== */
+.opt-c .slider-row {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-secondary);
+  padding: var(--space-sm) 0 var(--space-md) 0;
+}
+.opt-c .slider-row:first-child { padding-top: var(--space-xs); }
+.opt-c .slider-row:last-child  { border-bottom: none; padding-bottom: var(--space-xs); }
+.opt-c .badge {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-secondary);
+  padding: 4px 10px;
+}
+.opt-c .badge:hover { background: var(--bg-elevated); }
+
+/* Tiny track percentage labels */
+.tick-row {
+  position: relative;
+  height: 14px;
+  font-family: var(--font-data);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.tick-row span { position: absolute; transform: translateX(-50%); }
+.tick-row span:first-child { left: 0; transform: none; }
+.tick-row span:last-child  { right: 0; left: auto; transform: none; }
+
+.section-divider {
+  height: 1px;
+  background: var(--border-secondary);
+  margin: var(--space-md) 0;
+}
+.caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: var(--space-md);
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+<h1>Routing Config · Range Slider UI 改版对比</h1>
+<div class="subtitle">3 种视觉风格 · 单列卡片堆叠 + Slider 数值徽章 · 基于现有 eda-theme.css 设计语言</div>
+
+<div class="grid">
+
+  <!-- =========================================== OPTION A -->
+  <div>
+    <div class="col-title"><span class="dot dot-a"></span>OPTION A · Inset Card</div>
+    <div class="panel opt-a">
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Horizontal Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:10%;right:85%;"></div>
+          <div class="handle" style="left:10%"></div>
+          <div class="handle" style="left:15%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.10</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.15</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Vertical Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:30%;right:20%;"></div>
+          <div class="handle" style="left:30%"></div>
+          <div class="handle" style="left:80%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.30</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.80</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Resistance</div>
+          <div class="meta">bounds <b>[0, 10000]</b> Ω</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:5%;right:5%;"></div>
+          <div class="handle" style="left:5%"></div>
+          <div class="handle" style="left:95%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">500</span><span class="unit">Ω</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">9500</span><span class="unit">Ω</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">每行独立小卡片，弱对比 · 安静稳重 · 适合密集设置场景</div>
+  </div>
+
+  <!-- =========================================== OPTION B -->
+  <div>
+    <div class="col-title"><span class="dot dot-b"></span>OPTION B · Accent Strip</div>
+    <div class="panel opt-b">
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Horizontal Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:10%;right:85%;"></div>
+          <div class="handle" style="left:10%"></div>
+          <div class="handle" style="left:15%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.10</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.15</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Vertical Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:30%;right:20%;"></div>
+          <div class="handle" style="left:30%"></div>
+          <div class="handle" style="left:80%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.30</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.80</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Resistance</div>
+          <div class="meta">bounds <b>[0, 10000]</b> Ω</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:5%;right:5%;"></div>
+          <div class="handle" style="left:5%"></div>
+          <div class="handle" style="left:95%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">500</span><span class="unit">Ω</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">9500</span><span class="unit">Ω</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">每行带 3px accent 左侧条 + 渐变背景 · 视觉层级最强 · 接近 metric-card 风格</div>
+  </div>
+
+  <!-- =========================================== OPTION C -->
+  <div>
+    <div class="col-title"><span class="dot dot-c"></span>OPTION C · Compact Inline</div>
+    <div class="panel opt-c">
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Horizontal Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:10%;right:85%;"></div>
+          <div class="handle" style="left:10%"></div>
+          <div class="handle" style="left:15%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.10</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.15</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Vertical Ratio</div>
+          <div class="meta">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:30%;right:20%;"></div>
+          <div class="handle" style="left:30%"></div>
+          <div class="handle" style="left:80%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.30</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.80</span></span></div>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Resistance</div>
+          <div class="meta">bounds <b>[0, 10000]</b> Ω</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:5%;right:5%;"></div>
+          <div class="handle" style="left:5%"></div>
+          <div class="handle" style="left:95%"></div>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">500</span><span class="unit">Ω</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">9500</span><span class="unit">Ω</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">无卡片背景，仅分隔线 · 最紧凑 · 信息密度最高 · 牺牲视觉分隔</div>
+  </div>
+
+</div>
+
+<div class="section-divider" style="margin-top: 32px;"></div>
+
+<h2 style="font-size: 13px; margin-bottom: 12px; color: var(--text-secondary);">交互逻辑（三种方案通用）</h2>
+<div class="panel" style="margin-bottom: 16px;">
+  <ol style="padding-left: 20px; font-size: 12px; color: var(--text-secondary); line-height: 1.9;">
+    <li><b style="color: var(--text-primary);">拖拽 Slider 手柄</b> → 实时更新对应数值的 Low/High 徽章</li>
+    <li><b style="color: var(--text-primary);">点击数值徽章</b> → 弹出数字微调输入（dcc.Input 替换徽章的 value，blur/Enter 确认）</li>
+    <li><b style="color: var(--text-primary);">徽章 + Slider 双向同步</b> → 修改任一控件，另一个立即跟随</li>
+    <li><b style="color: var(--text-primary);">Slider 填充区显示当前有效区间</b>（accent 渐变色）· 视觉强化"什么算合规"</li>
+    <li><b style="color: var(--text-primary);">违反约束时徽章变红</b>（low &gt; high 时，徽章边框转 status-fail）</li>
+  </ol>
+</div>
+
+<div class="panel">
+  <h2 style="font-size: 13px; margin-bottom: 12px; color: var(--text-secondary);">设计语言一致性核对</h2>
+  <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+    <thead>
+      <tr style="text-align: left; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;">
+        <th style="padding: 6px 8px;">设计元素</th>
+        <th style="padding: 6px 8px;">项目主体</th>
+        <th style="padding: 6px 8px;">A</th>
+        <th style="padding: 6px 8px;">B</th>
+        <th style="padding: 6px 8px;">C</th>
+      </tr>
+    </thead>
+    <tbody style="font-family: var(--font-data); color: var(--text-secondary);">
+      <tr><td style="padding: 6px 8px;">颜色 token</td><td style="padding: 6px 8px;">--bg-primary/--accent-primary/--status-*</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td></tr>
+      <tr><td style="padding: 6px 8px;">字体</td><td style="padding: 6px 8px;">JetBrains Mono (data) / IBM Plex Sans (body)</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td></tr>
+      <tr><td style="padding: 6px 8px;">间距 scale</td><td style="padding: 6px 8px;">4/8/12/16/20/24</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td></tr>
+      <tr><td style="padding: 6px 8px;">Card pattern</td><td style="padding: 6px 8px;">bg-secondary + border-primary + radius-lg</td><td style="padding: 6px 8px;">inset 变体</td><td style="padding: 6px 8px;">accent-strip 变体</td><td style="padding: 6px 8px;">divided-list 变体</td></tr>
+      <tr><td style="padding: 6px 8px;">Metric card 复用</td><td style="padding: 6px 8px;">左 3px accent border + 渐变</td><td style="padding: 6px 8px;">—</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">—</td></tr>
+      <tr><td style="padding: 6px 8px;">Status 语义</td><td style="padding: 6px 8px;">pass/fail/warning</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td><td style="padding: 6px 8px;">✓</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

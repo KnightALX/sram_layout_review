@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Option B · Dark/Light Bimodal Preview</title>
+<style>
+/* ====================================================================
+   EDA Theme tokens (mirrors assets/eda-theme.css)
+   ==================================================================== */
+:root {
+  /* dark defaults */
+  --bg-primary:    #1a1a2e;
+  --bg-secondary:  #16213e;
+  --bg-tertiary:   #0f3460;
+  --bg-elevated:   #1e2a47;
+  --accent-primary:   #3b82f6;
+  --accent-secondary: #06b6d4;
+  --status-pass:   #22c55e;
+  --status-fail:   #ef4444;
+  --status-warning:#f59e0b;
+  --border-primary:#2d4a6f;
+  --border-secondary:#1e2a47;
+  --text-primary:  #e2e8f0;
+  --text-secondary:#94a3b8;
+  --text-muted:    #64748b;
+  --shadow-card:   0 1px 0 rgba(0,0,0,0.35), 0 4px 12px rgba(0,0,0,0.22);
+  --slider-track-bg: var(--bg-elevated);
+  --slider-handle-bg: #ffffff;
+  --strip-gradient: linear-gradient(90deg, rgba(59,130,246,0.10) 0%, rgba(6,182,212,0.02) 100%);
+  --strip-glow: 0 0 0 1px rgba(59,130,246,0.18), 0 1px 2px rgba(0,0,0,0.18);
+}
+.theme-light {
+  --bg-primary:    #f8fafc;
+  --bg-secondary:  #ffffff;
+  --bg-tertiary:   #f1f5f9;
+  --bg-elevated:   #f1f5f9;
+  --accent-primary:   #2563eb;
+  --accent-secondary: #0891b2;
+  --border-primary:#cbd5e1;
+  --border-secondary:#e2e8f0;
+  --text-primary:  #1e293b;
+  --text-secondary:#475569;
+  --text-muted:    #94a3b8;
+  --shadow-card:   0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(15,23,42,0.08);
+  --slider-track-bg: #e2e8f0;
+  --slider-handle-bg: #ffffff;
+  --strip-gradient: linear-gradient(90deg, rgba(37,99,235,0.07) 0%, rgba(8,145,178,0.015) 100%);
+  --strip-glow: 0 0 0 1px rgba(37,99,235,0.15), 0 1px 2px rgba(15,23,42,0.06);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 20px;
+  line-height: 1.5;
+  font-size: 13px;
+  transition: background-color .25s ease, color .25s ease;
+}
+h1 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+.subtitle { font-size: 12px; color: var(--text-muted); margin-bottom: 18px; }
+
+.toolbar { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+.toolbar button {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.toolbar button:hover { border-color: var(--accent-primary); }
+.toolbar .hint { color: var(--text-muted); font-size: 11px; margin-left: 8px; }
+
+/* two-panel grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  transition: background-color .25s ease, border-color .25s ease;
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.panel-header .title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.panel-header .pill {
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* slider row */
+.slider-row {
+  background: var(--strip-gradient);
+  border: 1px solid var(--border-primary);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 4px;
+  padding: 12px 12px 12px 13px;
+  margin-bottom: 12px;
+  box-shadow: var(--strip-glow);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.slider-row:hover { border-left-color: var(--accent-secondary); }
+.slider-row:last-child { margin-bottom: 0; }
+
+.row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.row-header .name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.row-header .name .help {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 6px;
+}
+.row-header .bounds {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+.row-header .bounds b {
+  color: var(--accent-secondary);
+  font-weight: 500;
+}
+
+/* slider visual */
+.slider {
+  position: relative;
+  height: 18px;
+  margin: 8px 0 4px 0;
+}
+.slider .track-bg {
+  position: absolute;
+  top: 6px;
+  left: 0; right: 0;
+  height: 6px;
+  background: var(--slider-track-bg);
+  border-radius: 3px;
+  border: 1px solid var(--border-secondary);
+}
+.slider .track-fill {
+  position: absolute;
+  top: 6px;
+  height: 6px;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+  border-radius: 3px;
+  box-shadow: 0 0 8px rgba(59,130,246,0.3);
+}
+.slider .handle {
+  position: absolute;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  background: var(--slider-handle-bg);
+  border: 2px solid var(--accent-primary);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  transform: translateX(-50%);
+  cursor: grab;
+}
+.slider .handle::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 4px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* badges */
+.badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.badge {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  cursor: text;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.badge:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+.badge .key {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-secondary);
+  font-weight: 600;
+}
+.badge .val {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.badge .unit {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 2px;
+}
+.badge .sep {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin: 0 1px;
+}
+
+/* logic annotation under each row */
+.logic {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.logic .ic { color: var(--accent-secondary); font-weight: 500; }
+.logic code {
+  background: var(--bg-tertiary);
+  color: var(--accent-secondary);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+/* tick row beneath slider */
+.tick-row {
+  position: relative;
+  height: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.tick-row span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tick-row span:first-child { left: 0; transform: none; }
+.tick-row span:last-child  { right: 0; left: auto; transform: none; }
+.tick-row span.mid         { left: 50%; }
+
+/* section divider */
+.section-divider {
+  height: 1px;
+  background: var(--border-secondary);
+  margin: 18px 0;
+}
+</style>
+</head>
+<body class="theme-dark">
+
+<h1>Range Slider Redesign — Option B · 双模式预览</h1>
+<div class="subtitle">Accent Strip 视觉风格 · 完整支持 dark / light 模式 · 数值徽章 + Slider 双向同步</div>
+
+<div class="toolbar">
+  <button onclick="document.body.classList.toggle('theme-light'); document.body.classList.toggle('theme-dark'); document.getElementById('leftPill').textContent = document.body.classList.contains('theme-light') ? 'Light' : 'Dark'; document.getElementById('rightPill').textContent = document.body.classList.contains('theme-light') ? 'Dark' : 'Light'; document.getElementById('toggleHint').textContent = document.body.classList.contains('theme-light') ? '点击切换为 Dark 模式' : '点击切换为 Light 模式';">🌓 切换模式</button>
+  <span class="hint" id="toggleHint">点击切换为 Light 模式</span>
+</div>
+
+<div class="grid">
+
+  <!-- ====== LEFT PANEL ====== -->
+  <div>
+    <div class="panel-header">
+      <div class="title">模式 A · 锚点含边界 (Closed Interval)</div>
+      <div class="pill" id="leftPill">Dark</div>
+    </div>
+    <div class="panel">
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Horizontal Ratio <span class="help">— 横向走线占比</span></div>
+          <div class="bounds">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:10%;right:85%;"></div>
+          <div class="handle" style="left:10%"></div>
+          <div class="handle" style="left:15%"></div>
+        </div>
+        <div class="tick-row">
+          <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+        </div>
+        <div class="badges">
+          <div class="badge">
+            <span class="key">Low</span>
+            <span><span class="val">0.10</span></span>
+          </div>
+          <div class="badge">
+            <span class="key">High</span>
+            <span><span class="val">0.15</span></span>
+          </div>
+        </div>
+        <div class="logic">
+          合规: <code>0.10 ≤ X ≤ 0.15</code> <span class="ic">⟷</span> 区间宽度 <code>0.05</code>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Vertical Ratio <span class="help">— 纵向走线占比</span></div>
+          <div class="bounds">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:30%;right:20%;"></div>
+          <div class="handle" style="left:30%"></div>
+          <div class="handle" style="left:80%"></div>
+        </div>
+        <div class="tick-row">
+          <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.30</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.80</span></span></div>
+        </div>
+        <div class="logic">
+          合规: <code>0.30 ≤ X ≤ 0.80</code> <span class="ic">⟷</span> 区间宽度 <code>0.50</code>
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Resistance <span class="help">— 走线电阻</span></div>
+          <div class="bounds">bounds <b>[0, 10000]</b> Ω</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:5%;right:5%;"></div>
+          <div class="handle" style="left:5%"></div>
+          <div class="handle" style="left:95%"></div>
+        </div>
+        <div class="tick-row">
+          <span>0</span><span class="mid">5000</span><span>10000</span>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">500</span><span class="unit">Ω</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">9500</span><span class="unit">Ω</span></span></div>
+        </div>
+        <div class="logic">
+          合规: <code>500 ≤ X ≤ 9500</code> <span class="ic">⟷</span> 区间宽度 <code>9000</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== RIGHT PANEL ====== -->
+  <div>
+    <div class="panel-header">
+      <div class="title">模式 B · 反向示例 (违反约束)</div>
+      <div class="pill" id="rightPill">Light</div>
+    </div>
+    <div class="panel" style="border-color: #ef4444;">
+      <div class="slider-row" style="border-left-color: var(--status-fail);">
+        <div class="row-header">
+          <div class="name">Capacitance <span class="help">— 走线电容</span></div>
+          <div class="bounds">bounds <b>[0, 100000]</b> fF</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:60%;right:0%;background: linear-gradient(90deg, #ef4444, #f59e0b);box-shadow: 0 0 8px rgba(239,68,68,0.3);"></div>
+          <div class="handle" style="left:60%;border-color: var(--status-fail);"></div>
+          <div class="handle" style="left:100%;border-color: var(--status-fail);"></div>
+        </div>
+        <div class="tick-row">
+          <span>0</span><span class="mid">50000</span><span>100000</span>
+        </div>
+        <div class="badges">
+          <div class="badge" style="border-color: var(--status-fail);box-shadow: 0 0 0 2px rgba(239,68,68,0.12);">
+            <span class="key" style="color: var(--status-fail);">Low</span>
+            <span><span class="val">60000</span><span class="unit">fF</span></span>
+          </div>
+          <div class="badge" style="border-color: var(--status-warning);">
+            <span class="key" style="color: var(--status-warning);">High</span>
+            <span><span class="val">100000</span><span class="unit">fF</span></span>
+          </div>
+        </div>
+        <div class="logic" style="color: var(--status-fail);">
+          ⚠ Low 越界 (超出合理区间下限 50%)  ·  请重新设置
+        </div>
+      </div>
+
+      <div class="slider-row" style="border-left-color: var(--status-warning);">
+        <div class="row-header">
+          <div class="name">Delay (Tau) <span class="help">— 信号延迟</span></div>
+          <div class="bounds">bounds <b>[0, 1000]</b> ps</div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:5%;right:30%;background: linear-gradient(90deg, #f59e0b, #f59e0b);box-shadow: 0 0 8px rgba(245,158,11,0.3);"></div>
+          <div class="handle" style="left:5%;border-color: var(--status-warning);"></div>
+          <div class="handle" style="left:70%;border-color: var(--status-warning);"></div>
+        </div>
+        <div class="tick-row">
+          <span>0</span><span class="mid">500</span><span>1000</span>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">50</span><span class="unit">ps</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">700</span><span class="unit">ps</span></span></div>
+        </div>
+        <div class="logic" style="color: var(--status-warning);">
+          ⚠ 区间过窄 (700ps)，可能误杀合规走线  ·  建议扩大区间
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <div class="row-header">
+          <div class="name">Similarity <span class="help">— 走线相似度</span></div>
+          <div class="bounds">bounds <b>[0.00, 1.00]</b></div>
+        </div>
+        <div class="slider">
+          <div class="track-bg"></div>
+          <div class="track-fill" style="left:80%;right:2%;"></div>
+          <div class="handle" style="left:80%"></div>
+          <div class="handle" style="left:98%"></div>
+        </div>
+        <div class="tick-row">
+          <span>0.00</span><span class="mid">0.50</span><span>1.00</span>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="key">Low</span><span><span class="val">0.80</span></span></div>
+          <div class="badge"><span class="key">High</span><span><span class="val">0.98</span></span></div>
+        </div>
+        <div class="logic">
+          合规: <code>0.80 ≤ X ≤ 0.98</code> <span class="ic">⟷</span> 区间宽度 <code>0.18</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section-divider"></div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title">交互逻辑说明</div>
+    </div>
+    <ol style="padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.85;">
+      <li><b style="color: var(--text-primary);">拖拽手柄</b> → 实时更新对应 Low/High 徽章数值与逻辑提示</li>
+      <li><b style="color: var(--text-primary);">点击徽章</b> → 原地切换为 <code style="background: var(--bg-tertiary);padding: 1px 6px;border-radius: 3px;color: var(--accent-secondary);">dcc.Input</code> 数字输入 · Enter/blur 确认 · Esc 取消</li>
+      <li><b style="color: var(--text-primary);">徽章 ↔ Slider 双向同步</b> · 任一控件变更，另一立即跟随</li>
+      <li><b style="color: var(--text-primary);">Slider 填充区显示当前合规区间</b>（accent 渐变）</li>
+      <li><b style="color: var(--text-primary);">约束违反</b>：Low &gt; High 或越界 → 左侧 accent 边转 fail/warning · 徽章边框转状态色</li>
+      <li><b style="color: var(--text-primary);">底部逻辑行</b>以数学区间展示语义，零歧义</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="title">设计语言一致性</div>
+    </div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+      <thead>
+        <tr style="text-align: left; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;">
+          <th style="padding: 5px 6px;">维度</th>
+          <th style="padding: 5px 6px;">项目主体</th>
+          <th style="padding: 5px 6px;">本方案</th>
+        </tr>
+      </thead>
+      <tbody style="font-family: 'JetBrains Mono', monospace; color: var(--text-secondary);">
+        <tr><td style="padding: 5px 6px;">颜色 token</td><td style="padding: 5px 6px;">--bg-primary/--accent-*</td><td style="padding: 5px 6px;">✓ 完全复用</td></tr>
+        <tr><td style="padding: 5px 6px;">字体</td><td style="padding: 5px 6px;">JetBrains Mono / IBM Plex Sans</td><td style="padding: 5px 6px;">✓ 完全复用</td></tr>
+        <tr><td style="padding: 5px 6px;">间距 scale</td><td style="padding: 5px 6px;">4/8/12/16/20/24</td><td style="padding: 5px 6px;">✓ 严格遵循</td></tr>
+        <tr><td style="padding: 5px 6px;">Card pattern</td><td style="padding: 5px 6px;">bg-secondary + border-primary + radius-lg</td><td style="padding: 5px 6px;">✓ 复用</td></tr>
+        <tr><td style="padding: 5px 6px;">Metric card 复用</td><td style="padding: 5px 6px;">左 3px accent border + 渐变</td><td style="padding: 5px 6px;">✓ 直接复用该模式</td></tr>
+        <tr><td style="padding: 5px 6px;">Dark/Light 双模式</td><td style="padding: 5px 6px;">.theme-light token override</td><td style="padding: 5px 6px;">✓ 全部走变量</td></tr>
+        <tr><td style="padding: 5px 6px;">Status 语义</td><td style="padding: 5px 6px;">pass/fail/warning 三色</td><td style="padding: 5px 6px;">✓ accent ↔ fail/warning</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  // Initial state: left = dark, right = light
+  document.addEventListener('DOMContentLoaded', () => {
+    document.body.classList.add('theme-dark');
+  });
+</script>
+
+</body>
+</html>
