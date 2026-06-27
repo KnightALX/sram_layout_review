@@ -131,35 +131,130 @@ RANGE_FIELDS = [
 ] # noqa: E501
 
 
+def _compute_constraint_status(low, high, s_min, s_max):
+    """Placeholder for Task 4 — return 'valid' for now."""
+    return "valid"
+
+
+def _build_logic_row_content(low, high, fmt, status):
+    """Placeholder for Task 5 — return minimal valid content."""
+    from dash import html
+    if status != "valid":
+        return [html.Span("placeholder")]
+    return [
+        html.Span("\u5408\u89c4: "),
+        html.Code(f"{fmt.format(low)} \u2264 X \u2264 {fmt.format(high)}"),
+        html.Span(" \u27fa ", className="ic"),
+        html.Span("\u533a\u95f4\u5bbd\u5ea6 "),
+        html.Code(fmt.format(high - low)),
+    ]
+
+
 def _build_range_input_group(field):
-    """Build a single row: label + RangeSlider + two number Inputs."""
+    """Build a single range-setting row with Accent Strip visual style.
+
+    Structure (each row is its own bordered card with left accent strip):
+      row-header       \u2014 label + help + bounds info
+      dcc.RangeSlider  \u2014 two handles, accent-gradient fill, no Dash internal marks
+      tick-row         \u2014 3 spans (min, mid, max)
+      badges           \u2014 two badges (Low / High), each with transparent dcc.Input overlay
+      logic-row        \u2014 math notation \u5408\u89c4: low \u2264 X \u2264 high \u27fa \u533a\u95f4\u5bbd\u5ea6 w
+
+    IDs:
+      slider-{name}            dcc.RangeSlider
+      badge-input-{name}-low   dcc.Input (transparent overlay, debounce=True)
+      badge-input-{name}-high  dcc.Input (transparent overlay, debounce=True)
+      logic-{name}             html.Div (logic annotation, gets className updates)
+      row-{name}               outer html.Div (gets className updates: is-invalid / is-warning)
+    """
     from dash import dcc, html
-    name, label = field["name"], field["label"]
+    name = field["name"]
+    label = field["label"]
+    help_text = field.get("help", "")
+    unit = field.get("unit", "")
+    fmt = field["fmt"]
     rng = getattr(routing_state.get_thresholds(), name)
-    s_min, s_max, step, fmt = field["slider_min"], field["slider_max"], field["step"], field["fmt"]
-    marks = {
-        s_min: f"{s_min:g}",
-        (s_min + s_max) / 2: f"{(s_min + s_max) / 2:g}",
-        s_max: f"{s_max:g}",
-    }
+    s_min = field["slider_min"]
+    s_max = field["slider_max"]
+    step = field["step"]
+    bounds_text = f"[{fmt.format(s_min)}, {fmt.format(s_max)}]"
+
+    initial_low, initial_high = rng.low, rng.high
+    initial_status = _compute_constraint_status(initial_low, initial_high, s_min, s_max)
+
     return html.Div([
-        html.Label(label, className="form-label"),
+        # \u2500\u2500 Row header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        html.Div([
+            html.Span([
+                html.Span(label, className="name"),
+                html.Span(f" \u2014 {help_text}", className="help") if help_text else None,
+            ]),
+            html.Span([
+                "bounds ",
+                html.B(bounds_text),
+                f" {unit}".rstrip(),
+            ], className="bounds"),
+        ], className="row-header"),
+
+        # \u2500\u2500 RangeSlider (no Dash marks; we render custom ticks below) \u2500\u2500
         dcc.RangeSlider(
             id=f"slider-{name}",
             min=s_min, max=s_max, step=step,
-            value=[rng.low, rng.high], marks=marks,
+            value=[initial_low, initial_high],
+            marks=None,
             tooltip={"placement": "bottom", "always_visible": False},
+            allowCross=False,
+            className="range-slider",
         ),
+
+        # \u2500\u2500 Custom tick-row (3 labels: min, mid, max) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         html.Div([
-            html.Span("Low: "),
-            dcc.Input(id=f"input-{name}-low", type="number",
-                      value=rng.low, min=s_min, max=s_max, step=step),
-            html.Span("High: ", style={"marginLeft": "12px"}),
-            dcc.Input(id=f"input-{name}-high", type="number",
-                      value=rng.high, min=s_min, max=s_max, step=step),
-        ], style={"display": "flex", "alignItems": "center",
-                  "marginTop": "4px"}),
-    ], className="form-group", style={"marginBottom": "12px"})
+            html.Span(fmt.format(s_min)),
+            html.Span(fmt.format((s_min + s_max) / 2), className="mid"),
+            html.Span(fmt.format(s_max)),
+        ], className="tick-row"),
+
+        # \u2500\u2500 Badges row (Low / High, each with overlay dcc.Input) \u2500\u2500\u2500\u2500\u2500
+        html.Div([
+            _build_badge(name, "low", "Low", initial_low, unit, s_min, s_max, step),
+            _build_badge(name, "high", "High", initial_high, unit, s_min, s_max, step),
+        ], className="badges"),
+
+        # \u2500\u2500 Logic row (math notation) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        html.Div(
+            id=f"logic-{name}",
+            className="logic" + (f" is-{initial_status}" if initial_status != "valid" else ""),
+            children=_build_logic_row_content(initial_low, initial_high, fmt, initial_status),
+        ),
+    ], id=f"row-{name}",
+       className="slider-row" + (f" is-{initial_status}" if initial_status != "valid" else ""),
+       **{"data-field": name})
+
+
+def _build_badge(field_name, bound, key_label, value, unit, s_min, s_max, step):
+    """Build a single badge: key label + transparent dcc.Input overlay + unit span.
+
+    The dcc.Input is always rendered (never hidden) and styled as a transparent
+    overlay. Clicking the badge focuses the input; user types directly; debounce
+    triggers the sync callback on Enter / blur.
+    """
+    from dash import dcc, html
+    return html.Div([
+        html.Span(key_label, className="key"),
+        html.Span([
+            dcc.Input(
+                id=f"badge-input-{field_name}-{bound}",
+                type="number",
+                value=value,
+                min=s_min, max=s_max,
+                step=step,
+                debounce=True,
+                className="badge-input-overlay",
+            ),
+            html.Span(unit, className="unit") if unit else None,
+        ], className="value-area"),
+    ], className="range-slider-badge",
+       **{"data-field": field_name, "data-bound": bound})
 
 
 def _sync_slider_to_input(value):
