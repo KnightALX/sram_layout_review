@@ -982,3 +982,39 @@ def register_routing_config_callbacks(app):
         )
         def _inputs_to_slider(_low, _high, _name=_name):
             return _sync_input_to_slider(_low, _high)
+
+    # --- 8. Logic-row + row className updates per field.
+    #         Slider value drives the math-notation annotation and the
+    #         is-invalid / is-warning class on the row container and logic row.
+    #         Pure helpers _compute_constraint_status and _build_logic_row_content
+    #         keep this callback thin and fully testable.
+    for field in RANGE_FIELDS:
+        _name = field["name"]
+        _slider_id = f"slider-{_name}"
+        _logic_id = f"logic-{_name}"
+        _row_id = f"row-{_name}"
+        _s_min = field["slider_min"]
+        _s_max = field["slider_max"]
+        _fmt = field["fmt"]
+
+        @app.callback(
+            [Output(_logic_id, "children"),
+             Output(_logic_id, "className"),
+             Output(_row_id, "className")],
+            Input(_slider_id, "value"),
+            prevent_initial_call=False,
+        )
+        def _update_logic_and_row(_value, _name=_name, _s_min=_s_min,
+                                  _s_max=_s_max, _fmt=_fmt):
+            from dash.exceptions import PreventUpdate
+            if _value is None or len(_value) != 2:
+                raise PreventUpdate
+            low, high = _value[0], _value[1]
+            status = _compute_constraint_status(low, high, _s_min, _s_max)
+            logic_class = "logic" if status == "valid" else f"logic is-{status}"
+            row_class = "slider-row" if status == "valid" else f"slider-row is-{status}"
+            return (
+                _build_logic_row_content(low, high, _fmt, status),
+                logic_class,
+                row_class,
+            )
