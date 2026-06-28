@@ -1,4 +1,9 @@
-"""Verify Apply thresholds persists across tab switch (the user's reported bug)."""
+"""Verify Apply thresholds persists across tab switch (the user's reported bug).
+
+Compact 2-column redesign: RangeSlider values are 7 `[low, high]` pairs (not
+14 flat numbers). The slider's always-visible tooltip is the single source for
+displayed values; there are no separate low/high text badges anymore.
+"""
 import sys
 sys.path.insert(0, '.')
 
@@ -33,16 +38,14 @@ def test_apply_then_tab_switch_persists_values():
 
     # Simulate tab switch back: rehydrate
     out = _compute_rehydrate_outputs()
-    # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
-    # [14..20]=low_vals, [21..27]=high_vals
-    # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
-    # r_ohm is the 3rd field (0-based 2): slider at 7+2=9, high at 21+2=23
+    # Compact 2-column redesign: 14-element tuple
+    # Layout: [0..6]=mode/status controls, [7..13]=7 slider pairs (low,high)
+    # tau_ps is the 5th field (0-based 4): slider at 7+4=11
+    # r_ohm is the 3rd field (0-based 2): slider at 7+2=9
     assert abs(out[11][1] - 25.0) < 1e-9, f"tau high={out[11]}"
-    assert abs(out[25] - 25.0) < 1e-9, f"tau high={out[25]}"
     assert abs(out[9][1] - 60.0) < 1e-9, f"r high={out[9]}"
-    assert abs(out[23] - 60.0) < 1e-9, f"r high={out[23]}"
-    # Editable -> inputs enabled (disabled flags at 28:42)
-    assert out[28] is False
+    # Editable -> mode buttons: editable btn is primary
+    assert "btn-primary" in out[1]
 
 
 def test_apply_failure_does_not_touch_state():
@@ -53,11 +56,18 @@ def test_apply_failure_does_not_touch_state():
 
     rs.set_frozen_mode(False)
     # Pass invalid h_ratio.high=0.3, v_ratio.high=0.3 -> sum < 1.0 -> validate fails
-    # 14 values: (low, high) for h, v, r, c, tau, via, sim
-    bad_values = (0.0, 0.3, 0.0, 0.3, 0.0, 50.0, 0.0, 20.0,
-                  0.0, 12.5, 0.8, 1.0, 70.0, 100.0)
+    # 7 [low, high] pairs for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+    bad_pairs = [
+        [0.0, 0.3],
+        [0.0, 0.3],
+        [0.0, 50.0],
+        [0.0, 20.0],
+        [0.0, 12.5],
+        [0.8, 1.0],
+        [70.0, 100.0],
+    ]
     try:
-        _handle_routing_preset_or_thresh(None, bad_values, "input-h_ratio-high")
+        _handle_routing_preset_or_thresh(None, bad_pairs, "input-h_ratio-high")
     except Exception:
         pass  # PreventUpdate or normal - both acceptable
 

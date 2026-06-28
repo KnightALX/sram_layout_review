@@ -34,23 +34,23 @@ from config.routing_thresholds import RoutingThresholds
 # a full Dash app or inner-callback extraction). Not part of public API surface.
 def _handle_routing_preset_or_thresh(
     preset: Optional[str],
-    range_values,
+    range_pairs,
     trigger: Optional[str],
 ) -> tuple:
     """Testable core logic for preset/apply handling.
 
-    `range_values` is a 14-tuple of (low_0, high_0, ..., low_6, high_6).
-    Returns the 41-element output tuple.
+    Args:
+        preset: preset name (used when trigger=='routing-preset')
+        range_pairs: list of 7 `[low, high]` pairs (slider values)
+        trigger: action identifier
+
+    Returns the 14-element output tuple (mode buttons + status + 7 sliders).
     """
-    n = len(RANGE_FIELDS)
     is_frozen = routing_state.is_frozen
     thresholds = routing_state.get_thresholds()
     f_cls, e_cls = _mode_button_classes(is_frozen)
-    dis_list = [is_frozen] * (2 * n)
     slider_vals = [[getattr(thresholds, fld["name"]).low,
                     getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
-    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
-    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
 
     if trigger == "routing-preset" and preset:
         if preset == routing_state.current_preset:
@@ -60,13 +60,12 @@ def _handle_routing_preset_or_thresh(
             curr_p = routing_state.current_preset
             warn = ("Edit Mode: Preset switch Blocked (unsaved changes). "
                     "Please click Apply or switch to Locked first.")
-            dis_ed = [False] * (2 * n)
             f_ed, e_ed = _mode_button_classes(False)
             return tuple([f_ed, e_ed, f"Loaded: {curr_p}", warn,
                           html.Span("\u25cf unsaved changes",
                                     style={"fontSize": "10px", "color": "#E67E22", "fontWeight": "600"}),
                           "", curr_p]
-                         + slider_vals + low_vals + high_vals + dis_ed)
+                         + slider_vals)
         try:
             t = RoutingThresholds.for_preset(preset)
             routing_state.current_preset = preset
@@ -75,17 +74,14 @@ def _handle_routing_preset_or_thresh(
             status = f"Loaded preset: {preset}"
             new_slider = [[getattr(t, fld["name"]).low,
                            getattr(t, fld["name"]).high] for fld in RANGE_FIELDS]
-            new_low = [getattr(t, fld["name"]).low for fld in RANGE_FIELDS]
-            new_high = [getattr(t, fld["name"]).high for fld in RANGE_FIELDS]
-            dis_f = [True] * (2 * n)
             f_f, e_f = _mode_button_classes(True)
             return tuple([f_f, e_f, status, "", html.Span("", style={"display": "none"}), "", preset]
-                         + new_slider + new_low + new_high + dis_f)
+                         + new_slider)
         except Exception as e:
             return tuple([f_cls, e_cls, f"Error: {e}", "", html.Span("", style={"display": "none"}), "", routing_state.current_preset]
-                         + slider_vals + low_vals + high_vals + dis_list)
+                         + slider_vals)
 
-    return _render_state(list(range_values))
+    return _render_state(list(range_pairs))
 
 # REMOVED: THRESHOLD_FIELDS replaced by RANGE_FIELDS below (Task 14-20 will
 # migrate the remaining references in this module).
@@ -154,64 +150,45 @@ def _compute_constraint_status(low, high, s_min, s_max):
 
 
 def _build_logic_row_content(low, high, fmt, status):
-    """Build the logic-row annotation as a list of Dash components.
+    """Backward-compatible alias for `_build_logic_compact_content`.
 
-    status: 'valid' | 'warning' | 'invalid'
-
-    Returns:
-        list of Dash components suitable for `children=` of an html.Div.
-
-    Layout per status:
-    - 'valid':    合规: {low} ≤ X ≤ {high}  ⟷  区间宽度 {width}
-    - 'invalid':  ⚠ Low ({low}) > High ({high})，区间不合法  ·  请重新设置
-    - 'warning' (low == high): ⚠ 区间宽度为 0，无任何值合规  ·  请调整 Low < High
-    - 'warning' (narrow):      ⚠ 区间过窄 ({width})，可能误杀合规走线  ·  建议扩大区间
+    Older tests (and any external imports) still reference this name. The
+    implementation has moved to the more compact `_build_logic_compact_content`.
     """
-    from dash import html
-    if status == "invalid":
-        return [
-            html.Span("\u26a0 Low ("),
-            html.Code(fmt.format(low)),
-            html.Span(") > High ("),
-            html.Code(fmt.format(high)),
-            html.Span("\uff09\uff0c\u533a\u95f4\u4e0d\u5408\u6cd5  \u00b7  \u8bf7\u91cd\u65b0\u8bbe\u7f6e"),
-        ]
-    if status == "warning":
-        if low == high:
-            return [
-                html.Span("\u26a0 \u533a\u95f4\u5bbd\u5ea6\u4e3a 0\uff0c\u65e0\u4efb\u4f55\u503c\u5408\u89c4  \u00b7  \u8bf7\u8c03\u6574 Low < High"),
-            ]
-        return [
-            html.Span("\u26a0 \u533a\u95f4\u8fc7\u7a84 ("),
-            html.Code(fmt.format(high - low)),
-            html.Span("\uff09\uff0c\u53ef\u80fd\u8bef\u6740\u5408\u89c4\u8d70\u7ebf  \u00b7  \u5efa\u8bae\u6269\u5927\u533a\u95f4"),
-        ]
-    # valid
-    return [
-        html.Span("\u5408\u89c4: "),
-        html.Code(f"{fmt.format(low)} \u2264 X \u2264 {fmt.format(high)}"),
-        html.Span(" \u27fa ", className="ic"),
-        html.Span("\u533a\u95f4\u5bbd\u5ea6 "),
-        html.Code(fmt.format(high - low)),
-    ]
+    return _build_logic_compact_content(low, high, fmt, status)
 
 
-def _build_range_input_group(field):
-    """Build a single range-setting row with Accent Strip visual style.
+# Row grouping for compact 2-column layout. Each tuple holds the field names
+# to share a row (right entry may be None for single-cell rows).
+# Order matches RANGE_FIELDS above.
+RANGE_ROW_GROUPS = [
+    ("h_ratio", "v_ratio"),
+    ("r_ohm", "c_ff"),
+    ("tau_ps", "via_coverage"),
+    ("similarity", None),
+]
 
-    Structure (each row is its own bordered card with left accent strip):
-      row-header       \u2014 label + help + bounds info
-      dcc.RangeSlider  \u2014 two handles, accent-gradient fill, no Dash internal marks
-      tick-row         \u2014 3 spans (min, mid, max)
-      badges           \u2014 two badges (Low / High), each with transparent dcc.Input overlay
-      logic-row        \u2014 math notation \u5408\u89c4: low \u2264 X \u2264 high \u27fa \u533a\u95f4\u5bbd\u5ea6 w
+
+def _field_by_name(name):
+    """Look up the field descriptor dict for a given threshold name."""
+    for fld in RANGE_FIELDS:
+        if fld["name"] == name:
+            return fld
+    raise KeyError(f"Unknown range field: {name}")
+
+
+def _build_metric_cell(field):
+    """Build a single metric cell \u2014 name + help + bounds + RangeSlider + tick + logic.
+
+    The RangeSlider is the ONLY input control. Its built-in tooltip
+    (`always_visible=True`) replaces the previous low/high text badges,
+    showing the current low/high values directly on the bar so users can
+    read and drag-set them in one place.
 
     IDs:
-      slider-{name}            dcc.RangeSlider
-      badge-input-{name}-low   dcc.Input (transparent overlay, debounce=True)
-      badge-input-{name}-high  dcc.Input (transparent overlay, debounce=True)
-      logic-{name}             html.Div (logic annotation, gets className updates)
-      row-{name}               outer html.Div (gets className updates: is-invalid / is-warning)
+      slider-{name}     dcc.RangeSlider (tooltip={"always_visible": True})
+      logic-{name}      html.Div (logic-compact annotation; className updated)
+      cell-{name}       outer html.Div (className updated: is-invalid / is-warning)
     """
     from dash import dcc, html
     name = field["name"]
@@ -228,94 +205,114 @@ def _build_range_input_group(field):
     initial_low, initial_high = rng.low, rng.high
     initial_status = _compute_constraint_status(initial_low, initial_high, s_min, s_max)
 
+    cell_class = "metric-cell"
+    if initial_status != "valid":
+        cell_class += f" is-{initial_status}"
+
     return html.Div([
-        # \u2500\u2500 Row header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # \u2500\u2500 Metric header (name + help + bounds) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         html.Div([
             html.Span([
-                html.Span(label, className="name"),
-                html.Span(f" \u2014 {help_text}", className="help") if help_text else None,
+                html.Span(label, className="metric-name"),
+                html.Span(f" \u2014 {help_text}", className="metric-help") if help_text else None,
             ]),
             html.Span([
                 "bounds ",
                 html.B(bounds_text),
                 f" {unit}".rstrip(),
-            ], className="bounds"),
-        ], className="row-header"),
+            ], className="metric-bounds"),
+        ], className="metric-header"),
 
-        # \u2500\u2500 RangeSlider (no Dash marks; we render custom ticks below) \u2500\u2500
+        # \u2500\u2500 RangeSlider (tooltip merged \u2014 shows low/high on the bar) \u2500\u2500\u2500\u2500\u2500
         dcc.RangeSlider(
             id=f"slider-{name}",
             min=s_min, max=s_max, step=step,
             value=[initial_low, initial_high],
             marks=None,
-            tooltip={"placement": "bottom", "always_visible": False},
+            tooltip={"placement": "bottom", "always_visible": True},
             allowCross=False,
             className="range-slider",
+            persistence=False,
         ),
 
-        # \u2500\u2500 Custom tick-row (3 labels: min, mid, max) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # \u2500\u2500 Custom tick-row (min, mid, max) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         html.Div([
             html.Span(fmt.format(s_min)),
             html.Span(fmt.format((s_min + s_max) / 2), className="mid"),
             html.Span(fmt.format(s_max)),
         ], className="tick-row"),
 
-        # \u2500\u2500 Badges row (Low / High, each with overlay dcc.Input) \u2500\u2500\u2500\u2500\u2500
-        html.Div([
-            _build_badge(name, "low", "Low", initial_low, unit, s_min, s_max, step),
-            _build_badge(name, "high", "High", initial_high, unit, s_min, s_max, step),
-        ], className="badges"),
-
-        # \u2500\u2500 Logic row (math notation) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        # \u2500\u2500 Logic-compact row (math notation) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         html.Div(
             id=f"logic-{name}",
-            className="logic" + (f" is-{initial_status}" if initial_status != "valid" else ""),
-            children=_build_logic_row_content(initial_low, initial_high, fmt, initial_status),
+            className="logic-compact"
+                     + (f" is-{initial_status}" if initial_status != "valid" else ""),
+            children=_build_logic_compact_content(initial_low, initial_high, fmt, initial_status),
         ),
-    ], id=f"row-{name}",
-       className="slider-row" + (f" is-{initial_status}" if initial_status != "valid" else ""),
+    ], id=f"cell-{name}",
+       className=cell_class,
        **{"data-field": name})
 
 
-def _build_badge(field_name, bound, key_label, value, unit, s_min, s_max, step):
-    """Build a single badge: key label + transparent dcc.Input overlay + unit span.
+def _build_compact_range_row(left_field, right_field=None):
+    """Build a 1- or 2-cell row. Two cells share one outer .range-row.double border.
 
-    The dcc.Input is always rendered (never hidden) and styled as a transparent
-    overlay. Clicking the badge focuses the input; user types directly; debounce
-    triggers the sync callback on Enter / blur.
+    The outer .range-row container provides a shared border so two cells feel
+    like one logical group. The grid auto-layout (CSS) handles the column split.
     """
-    from dash import dcc, html
-    return html.Div([
-        html.Span(key_label, className="key"),
-        html.Span([
-            dcc.Input(
-                id=f"badge-input-{field_name}-{bound}",
-                type="number",
-                value=value,
-                min=s_min, max=s_max,
-                step=step,
-                debounce=True,
-                className="badge-input-overlay",
-            ),
-            html.Span(unit, className="unit") if unit else None,
-        ], className="value-area"),
-    ], className="range-slider-badge",
-       **{"data-field": field_name, "data-bound": bound})
+    if right_field is None:
+        return html.Div(
+            [_build_metric_cell(left_field)],
+            className="range-row single",
+        )
+    return html.Div(
+        [_build_metric_cell(left_field), _build_metric_cell(right_field)],
+        className="range-row double",
+    )
 
 
-def _sync_slider_to_badges(value):
-    """Slider -> Badge inputs: unpack the [low, high] list."""
-    return value[0], value[1]
+def _build_logic_compact_content(low, high, fmt, status):
+    """Build the logic-compact annotation as a list of Dash components.
+
+    Compact text \u2014 uses inline `\u2264 X \u2264` instead of a wide multi-line notation.
+    Status determines color via class on the container.
+    """
+    from dash import html
+    if status == "invalid":
+        return [
+            html.Span("\u26a0 Low ("),
+            html.Code(fmt.format(low)),
+            html.Span(") > High ("),
+            html.Code(fmt.format(high)),
+            html.Span("\uff09\uff0c\u533a\u95f4\u4e0d\u5408\u6cd5"),
+        ]
+    if status == "warning":
+        if low == high:
+            return [
+                html.Span("\u26a0 \u533a\u95f4\u5bbd\u5ea6\u4e3a 0"),
+            ]
+        return [
+            html.Span("\u26a0 \u533a\u95f4\u8fc7\u7a84 ("),
+            html.Code(fmt.format(high - low)),
+            html.Span("\uff09"),
+        ]
+    # valid
+    return [
+        html.Span("\u5408\u89c4 "),
+        html.Code(f"{fmt.format(low)} \u2264 X \u2264 {fmt.format(high)}"),
+        html.Span(" \u27fa "),
+        html.Code(fmt.format(high - low)),
+    ]
 
 
-def _sync_badges_to_slider(low, high):
-    """Badge inputs -> Slider. Returns [low, high] or None to signal PreventUpdate."""
-    from dash.exceptions import PreventUpdate
-    if low is None or high is None:
-        raise PreventUpdate
-    if low > high:
-        raise PreventUpdate
-    return [low, high]
+def _sync_slider_to_tooltip(value):
+    """Slider -> Tooltip: passed-through (kept for API symmetry / tests).
+
+    Dash renders the always-visible tooltip automatically from the slider's
+    value, so no explicit projection is required. This stub exists only so
+    tests/test_routing_config_sync.py can import a single function name.
+    """
+    return value
 
 
 def _mode_button_classes(frozen: bool) -> tuple[str, str]:
@@ -338,16 +335,22 @@ def _disabled_list(frozen: bool, n_fields: int) -> list[bool]:
     return [frozen] * n_fields
 
 
-def _validate_apply(range_values):
-    """Validate 14 (low, high) values for Apply.
+def _validate_apply(range_pairs):
+    """Validate 7 `[low, high]` slider pairs for Apply.
+
+    Args:
+        range_pairs: list of 7 `[low, high]` lists, one per RANGE_FIELDS
+            entry. In the compact 2-column redesign, each RangeSlider exposes
+            its value as a `[low, high]` list — there are no separate
+            "low input" / "high input" anymore.
 
     Returns:
         (valid_thresholds, None) on success
         (None, error_message) on failure
     """
     n = len(RANGE_FIELDS)
-    if len(range_values) != 2 * n:
-        return None, f"Expected {2 * n} values, got {len(range_values)}"
+    if len(range_pairs) != n:
+        return None, f"Expected {n} slider pairs, got {len(range_pairs)}"
 
     current = routing_state.get_thresholds()
     tentative_dict = current.to_dict()
@@ -355,8 +358,10 @@ def _validate_apply(range_values):
     try:
         for i, field in enumerate(RANGE_FIELDS):
             name = field["name"]
-            low = range_values[2 * i]
-            high = range_values[2 * i + 1]
+            pair = range_pairs[i]
+            if pair is None or len(pair) != 2:
+                continue
+            low, high = pair[0], pair[1]
             if low is None or high is None:
                 continue
             low_f, high_f = float(low), float(high)
@@ -372,8 +377,13 @@ def _validate_apply(range_values):
     return tentative, None
 
 
-def _apply_thresholds(range_values):
-    valid, err = _validate_apply(range_values)
+def _apply_thresholds(range_pairs):
+    """Apply the user's 7 `[low, high]` slider pairs to `routing_state`.
+
+    Updates `routing_state.custom_thresholds` and switches to Editable mode
+    on success; sets `routing_state.last_error` on validation failure.
+    """
+    valid, err = _validate_apply(range_pairs)
     if valid is None:
         routing_state.last_error = err
     else:
@@ -382,8 +392,12 @@ def _apply_thresholds(range_values):
     routing_state.last_status = ""
 
 
-def _render_state(range_input_values):
-    """Project routing_state to UI outputs (41-element tuple).
+def _render_state(range_pairs):
+    """Project routing_state to UI outputs (14-element tuple).
+
+    Args:
+        range_pairs: list of 7 `[low, high]` lists (slider values from the
+            browser). Used only for the unsaved-changes diff vs. state.
 
     Output tuple order:
       [0]   mode-frozen className
@@ -394,10 +408,9 @@ def _render_state(range_input_values):
       [5]   thresh-apply-status children
       [6]   routing-preset value
       [7..13]  7 slider-{name} values (each [low, high])
-      [14..20] 7 badge-input-{name}-low values
-      [21..27] 7 badge-input-{name}-high values
-      [28..34] 7 badge-input-{name}-low disabled
-      [35..41] 7 badge-input-{name}-high disabled
+
+    Note: low/high text badges were removed in the compact 2-column redesign.
+    The slider's always-visible tooltip is the single source for displayed values.
     """
     thresholds = routing_state.get_thresholds()
     is_frozen = routing_state.is_frozen
@@ -405,9 +418,6 @@ def _render_state(range_input_values):
     n = len(RANGE_FIELDS)
     slider_vals = [[getattr(thresholds, fld["name"]).low,
                     getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
-    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
-    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
-    dis_list = [is_frozen] * (2 * n)
 
     def _vals_differ(a, b):
         try:
@@ -416,12 +426,16 @@ def _render_state(range_input_values):
             return a != b
 
     has_unsaved = False
-    if not is_frozen and len(range_input_values) == 2 * n:
+    if not is_frozen and len(range_pairs) == n:
         for i, fld in enumerate(RANGE_FIELDS):
-            if _vals_differ(range_input_values[2 * i], low_vals[i]):
-                has_unsaved = True
-                break
-            if _vals_differ(range_input_values[2 * i + 1], high_vals[i]):
+            cur_low = slider_vals[i][0]
+            cur_high = slider_vals[i][1]
+            pair = range_pairs[i]
+            if pair is None or len(pair) != 2:
+                continue
+            inp_low = pair[0]
+            inp_high = pair[1]
+            if _vals_differ(inp_low, cur_low) or _vals_differ(inp_high, cur_high):
                 has_unsaved = True
                 break
 
@@ -450,11 +464,18 @@ def _render_state(range_input_values):
         f_cls, e_cls,
         preset_status, config_status, unsaved_badge, apply_status,
         routing_state.current_preset,
-    ] + slider_vals + low_vals + high_vals + dis_list)
+    ] + slider_vals)
 
 
-def _dispatch_action(trigger_id, trigger_value, range_values):
-    """Handle non-typing triggers (preset, mode, apply, tabs)."""
+def _dispatch_action(trigger_id, trigger_value, range_pairs):
+    """Handle non-typing triggers (preset, mode, apply, tabs).
+
+    Args:
+        trigger_id: e.g. "btn-apply-thresholds.n_clicks"
+        trigger_value: value the trigger fired with
+        range_pairs: list of 7 `[low, high]` pairs from the sliders
+            (used by Apply). Each item is itself a 2-element list.
+    """
     if trigger_id is None:
         return
     if trigger_id == "routing-preset.value":
@@ -486,35 +507,27 @@ def _dispatch_action(trigger_id, trigger_value, range_values):
         routing_state.last_status = ""
         return
     if trigger_id == "btn-apply-thresholds.n_clicks":
-        _apply_thresholds(tuple(range_values))
-        return
-    if trigger_id and trigger_id.startswith("badge-input-") and trigger_id.endswith(".value"):
+        _apply_thresholds(range_pairs)
         return
     if trigger_id == "tabs.value":
         return
 
 
 def _compute_rehydrate_outputs():
-    """Return the full 41-tuple to re-populate Routing Config controls from state.
-
-    Used by the tab-switch rehydration callback. Order matches the large
-    output list used by preset/mode/apply callbacks:
+    """Return the full 14-tuple to re-populate Routing Config controls from state.
+    Used by the tab-switch rehydration callback. Order matches the output list
+    used by preset/mode/apply callbacks:
       [mode-frozen, mode-editable, preset-status, config-status,
        unsaved-badge, apply-status, preset-value]
-      + 7 slider-{name} values + 7 badge-input-{name}-low values
-      + 7 badge-input-{name}-high values + 14 disabled flags.
+      + 7 slider-{name} values.
     Clears transient badges on re-entry for clean re-hydration while restoring
-    authoritative values + mode + disabled from routing_state.
+    authoritative values + mode from routing_state.
     """
     thresholds = routing_state.get_thresholds()
     is_frozen = routing_state.is_frozen
     f_cls, e_cls = _mode_button_classes(is_frozen)
-    n = len(RANGE_FIELDS)
     slider_vals = [[getattr(thresholds, fld["name"]).low,
                     getattr(thresholds, fld["name"]).high] for fld in RANGE_FIELDS]
-    low_vals = [getattr(thresholds, fld["name"]).low for fld in RANGE_FIELDS]
-    high_vals = [getattr(thresholds, fld["name"]).high for fld in RANGE_FIELDS]
-    dis_list = [is_frozen] * (2 * n)
     return tuple([
         f_cls, e_cls,
         f"Loaded: {routing_state.current_preset}",
@@ -522,12 +535,17 @@ def _compute_rehydrate_outputs():
         html.Span("", style={"display": "none"}),
         "",
         routing_state.current_preset,
-    ] + slider_vals + low_vals + high_vals + dis_list)
+    ] + slider_vals)
 
 
 def get_threshold_input_ids() -> List[str]:
-    """Return the dcc.Input IDs for all threshold fields (used in callbacks)."""
-    return [f"badge-input-{fld['name']}-low" for fld in RANGE_FIELDS] + [f"badge-input-{fld['name']}-high" for fld in RANGE_FIELDS]
+    """Return the slider IDs for all threshold fields (used in callbacks).
+
+    In the compact 2-column redesign, the only threshold input control is the
+    RangeSlider. The old low/high text badges were merged into the slider via
+    its always-visible tooltip, so there are no separate dcc.Input IDs anymore.
+    """
+    return [f"slider-{fld['name']}" for fld in RANGE_FIELDS]
 
 
 def _preset_options():
@@ -689,15 +707,19 @@ def create_routing_config_tab():
                                  "fontWeight": "600", "display": "none"}),
             ], className="card-header"),
             html.Div([
-                # Range slider groups (replaces legacy thresh-{name} inputs)
+                # Range slider groups (compact 2-column layout)
                 html.Div([
                     html.Div("\u9608\u503c\u533a\u95f4 (Closed Interval)",
                              className="section-header"),
-                    html.Div("\u62d6\u62fd\u624b\u67c4\u7c97\u8c03 \u00b7 \u70b9\u51fb Low/High \u5fbd\u7ae0\u7cbe\u786e\u8f93\u5165",
+                    html.Div("\u62d6\u62fd\u624b\u67c4\u8c03\u6574 \u00b7 \u4e24\u4e2a\u6307\u6807\u4e00\u884c\u663e\u793a \u00b7 \u503c\u5728 slider \u4e0a\u53f3\u4fa7 tooltip",
                              className="section-subheader"),
                     html.Div([
-                        _build_range_input_group(field)
-                        for field in RANGE_FIELDS
+                        # 2-cell rows first, then the lone trailing single-cell row
+                        _build_compact_range_row(
+                            _field_by_name(left),
+                            _field_by_name(right) if right else None,
+                        )
+                        for left, right in RANGE_ROW_GROUPS
                     ], id="routing-config-ranges", className="ranges-container"),
                 ], className="config-section"),
                 # Apply button + status
@@ -879,17 +901,17 @@ def register_routing_config_callbacks(app):
     # (Apply Thresholds button handling moved to _routing_config_ui.)
 
     # --- 6. Unified single callback for the entire Routing Config tab.
+    #         Compact 2-column redesign: 14 Outputs total (mode/status + 7 sliders).
     #         Replaces the 4 overlapping callbacks (_rehydrate_on_tab,
     #         update_routing_config, _apply_thresholds, _switch_mode) which all
     #         wrote to the same 21 Outputs and required `allow_duplicate=True`.
-    #         This single callback owns ALL 41 Outputs and uses ctx.triggered
+    #         This single callback owns ALL 14 Outputs and uses ctx.triggered
     #         to dispatch state mutations via _dispatch_action + render via
     #         _render_state. NO allow_duplicate=True anywhere. ---
     n = len(RANGE_FIELDS)
-    low_outputs = [Output(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-    high_outputs = [Output(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS]
-    low_dis = [Output(f"badge-input-{f['name']}-low", "disabled") for f in RANGE_FIELDS]
-    high_dis = [Output(f"badge-input-{f['name']}-high", "disabled") for f in RANGE_FIELDS]
+    slider_outputs = [Output(f"slider-{f['name']}", "value") for f in RANGE_FIELDS]
+    slider_inputs = [Input(f"slider-{f['name']}", "value") for f in RANGE_FIELDS]
+    slider_states = [State(f"slider-{f['name']}", "value") for f in RANGE_FIELDS]
 
     @app.callback(
         [Output("mode-frozen", "className"),
@@ -899,17 +921,14 @@ def register_routing_config_callbacks(app):
          Output("thresh-unsaved-badge", "children"),
          Output("thresh-apply-status", "children"),
          Output("routing-preset", "value")]
-        + [Output(f"slider-{f['name']}", "value") for f in RANGE_FIELDS]
-        + low_outputs + high_outputs + low_dis + high_dis,
+        + slider_outputs,
         [Input("routing-preset", "value"),
          Input("mode-frozen", "n_clicks"),
          Input("mode-editable", "n_clicks"),
          Input("btn-apply-thresholds", "n_clicks"),
          Input("tabs", "value")]
-        + [Input(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-        + [Input(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS],
-        [State(f"badge-input-{f['name']}-low", "value") for f in RANGE_FIELDS]
-        + [State(f"badge-input-{f['name']}-high", "value") for f in RANGE_FIELDS],
+        + slider_inputs,
+        slider_states,
         prevent_initial_call=False,
     )
     def _routing_config_ui(
@@ -920,21 +939,45 @@ def register_routing_config_callbacks(app):
 
         - Reads `ctx.triggered` to identify the action
         - Mutates `routing_state` (via _dispatch_action)
-        - Projects state to 41 UI outputs (via _render_state)
+        - Projects state to 14 UI outputs (via _render_state)
 
         NO allow_duplicate=True anywhere. This is the ONLY callback that
-        writes to these 41 Outputs.
+        writes to these 14 Outputs.
+
+        IMPORTANT — slider-drag isolation:
+        When the trigger is one of the 7 RangeSliders, we MUST NOT write
+        back to any slider output. `_render_state()` reads its slider values
+        from `routing_state.thresholds` (which still holds the pre-Apply
+        state), so writing them out would snap the dragged handle back to
+        its pre-drag value. Using `no_update` for slider outputs preserves
+        the user's in-flight drag while still updating mode buttons and
+        the "Unsaved Changes" badge (via the existing diff-vs-state logic
+        in `_render_state()`).
+
+        IMPORTANT — slider value format:
+        Each RangeSlider exposes its `value` as a `[low, high]` list, NOT
+        two separate scalar inputs (the compact 2-column redesign removed
+        the legacy low/high text badges). We therefore project `*input_args`
+        into a list of 7 `[low, high]` pairs and pass that to all helpers.
         """
         from dash import callback_context as _ctx
         from dash.exceptions import PreventUpdate as _PreventUpdate
         from dash import no_update as _no_update
 
         n = len(RANGE_FIELDS)
-        # Last 2*n args are the 14 State badge-input values: [low_0..low_6, high_0..high_6]
-        range_state = list(input_args[-2 * n:])
+        # `*input_args` holds:
+        #   - the n slider Inputs (each [low, high] pair), then
+        #   - the n slider States (each [low, high] pair)
+        # For our purposes the two are the same value (Inputs shadow States),
+        # so we only need to extract the first n items. Each item is itself
+        # a `[low, high]` list — DO NOT flatten it.
+        if len(input_args) < n:
+            range_pairs = [None] * n
+        else:
+            range_pairs = list(input_args[:n])
 
         if not _ctx.triggered:
-            return _render_state(range_state)
+            return _render_state(range_pairs)
 
         trigger_id = _ctx.triggered[0]["prop_id"]
         trigger_value = _ctx.triggered[0]["value"]
@@ -944,61 +987,30 @@ def register_routing_config_callbacks(app):
                 raise _PreventUpdate
             return _compute_rehydrate_outputs()
 
-        _dispatch_action(trigger_id, trigger_value, tuple(range_state))
-        rendered = _render_state(range_state)
-
-        if trigger_id and trigger_id.startswith("badge-input-") and trigger_id.endswith(".value"):
-            outs = list(rendered)
+        # Slider drags: preserve the user's drag. Do NOT write back to any
+        # slider output (that would reset the dragged value). The mode
+        # buttons + unsaved badge still update via _render_state().
+        if trigger_id and trigger_id.startswith("slider-") and trigger_id.endswith(".value"):
+            rendered = list(_render_state(range_pairs))
+            # Slider outputs occupy indices 7..13 (7 mode/status + 7 slider pairs).
             for i in range(n):
-                outs[14 + i] = _no_update
-                outs[21 + i] = _no_update
-            return tuple(outs)
-        return rendered
+                rendered[7 + i] = _no_update
+            return tuple(rendered)
 
-    # --- 7. Slider <-> Badge inputs bidirectional sync (range fields).
-    #         For each RANGE_FIELDS entry, two pure-function callbacks:
-    #           (a) slider-{name}.value                 -> badge-input-{name}-low/high.value
-    #           (b) badge-input-{name}-low/high.value -> slider-{name}.value
-    #         Pure logic is in _sync_slider_to_badges / _sync_badges_to_slider
-    #         and exercised directly by tests/test_routing_config_sync.py.
-    #         prevent_initial_call=True so the sync only fires on real user
-    #         interaction (avoids feedback loops on initial render).
-    for field in RANGE_FIELDS:
-        _name = field["name"]
-        _slider_id = f"slider-{_name}"
-        _low_id = f"badge-input-{_name}-low"
-        _high_id = f"badge-input-{_name}-high"
+        _dispatch_action(trigger_id, trigger_value, range_pairs)
+        return _render_state(range_pairs)
 
-        # (a) Slider -> Badge inputs
-        @app.callback(
-            [Output(_low_id, "value", allow_duplicate=True),
-             Output(_high_id, "value", allow_duplicate=True)],
-            Input(_slider_id, "value"),
-            prevent_initial_call=True,
-        )
-        def _slider_to_badges(_value, _name=_name):
-            return _sync_slider_to_badges(_value)
-
-        # (b) Badge inputs -> Slider (with low>high / None guard via PreventUpdate)
-        @app.callback(
-            Output(_slider_id, "value", allow_duplicate=True),
-            [Input(_low_id, "value"),
-             Input(_high_id, "value")],
-            prevent_initial_call=True,
-        )
-        def _badges_to_slider(_low, _high, _name=_name):
-            return _sync_badges_to_slider(_low, _high)
-
-    # --- 8. Logic-row + row className updates per field.
+    # --- 7. Logic-compact + cell className updates per field.
     #         Slider value drives the math-notation annotation and the
-    #         is-invalid / is-warning class on the row container and logic row.
-    #         Pure helpers _compute_constraint_status and _build_logic_row_content
+    #         is-invalid / is-warning class on the metric cell container
+    #         and the logic-compact row.
+    #         Pure helpers _compute_constraint_status and _build_logic_compact_content
     #         keep this callback thin and fully testable.
     for field in RANGE_FIELDS:
         _name = field["name"]
         _slider_id = f"slider-{_name}"
         _logic_id = f"logic-{_name}"
-        _row_id = f"row-{_name}"
+        _cell_id = f"cell-{_name}"
         _s_min = field["slider_min"]
         _s_max = field["slider_max"]
         _fmt = field["fmt"]
@@ -1006,21 +1018,21 @@ def register_routing_config_callbacks(app):
         @app.callback(
             [Output(_logic_id, "children"),
              Output(_logic_id, "className"),
-             Output(_row_id, "className")],
+             Output(_cell_id, "className")],
             Input(_slider_id, "value"),
             prevent_initial_call=False,
         )
-        def _update_logic_and_row(_value, _name=_name, _s_min=_s_min,
-                                  _s_max=_s_max, _fmt=_fmt):
+        def _update_logic_and_cell(_value, _name=_name, _s_min=_s_min,
+                                   _s_max=_s_max, _fmt=_fmt):
             from dash.exceptions import PreventUpdate
             if _value is None or len(_value) != 2:
                 raise PreventUpdate
             low, high = _value[0], _value[1]
             status = _compute_constraint_status(low, high, _s_min, _s_max)
-            logic_class = "logic" if status == "valid" else f"logic is-{status}"
-            row_class = "slider-row" if status == "valid" else f"slider-row is-{status}"
+            logic_class = "logic-compact" if status == "valid" else f"logic-compact is-{status}"
+            cell_class = "metric-cell" if status == "valid" else f"metric-cell is-{status}"
             return (
-                _build_logic_row_content(low, high, _fmt, status),
+                _build_logic_compact_content(low, high, _fmt, status),
                 logic_class,
-                row_class,
+                cell_class,
             )

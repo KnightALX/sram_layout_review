@@ -1,32 +1,18 @@
-"""Tests for slider<->badge-input bidirectional sync.
+"""Tests for the slider<->tooltip sync shim.
 
-These exercise the pure functions _sync_slider_to_badges and
-_sync_badges_to_slider directly (without a Dash server)."""
-from app.routing_config import _sync_slider_to_badges, _sync_badges_to_slider
-
-
-def test_slider_to_badges():
-    assert _sync_slider_to_badges([0.05, 0.20]) == (0.05, 0.20)
-
-
-def test_badges_to_slider_valid():
-    assert _sync_badges_to_slider(0.05, 0.20) == [0.05, 0.20]
+In the compact 2-column redesign, the slider's always-visible tooltip replaces
+the badge text inputs. There is no longer a two-way sync — the tooltip just
+reads the slider's current `[low, high]` value directly. The shim is kept so
+this module has a single named function to import (used elsewhere historically).
+"""
+from app.routing_config import _sync_slider_to_tooltip
 
 
-def test_badges_to_slider_low_gt_high_returns_none():
-    """low > high is invalid; the sync returns None (caller raises PreventUpdate)."""
-    from dash.exceptions import PreventUpdate
-    try:
-        result = _sync_badges_to_slider(0.20, 0.05)
-        assert result is None
-    except PreventUpdate:
-        pass
+def test_slider_to_tooltip_passes_through():
+    """The shim returns the [low, high] list unchanged; Dash renders the tooltip."""
+    assert _sync_slider_to_tooltip([0.05, 0.20]) == [0.05, 0.20]
 
 
-def test_badges_to_slider_none_returns_none():
-    from dash.exceptions import PreventUpdate
-    try:
-        result = _sync_badges_to_slider(None, 0.20)
-        assert result is None
-    except PreventUpdate:
-        pass
+def test_slider_to_tooltip_handles_int_values():
+    """Integer-valued [low, high] is passed through unchanged."""
+    assert _sync_slider_to_tooltip([0, 100]) == [0, 100]

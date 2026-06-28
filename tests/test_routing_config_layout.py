@@ -1,4 +1,9 @@
-"""Integration-style tests for the Routing Config tab layout and state helpers."""
+"""Integration-style tests for the Routing Config tab layout and state helpers.
+
+Compact 2-column redesign: each RangeSlider exposes its `value` as a
+`[low, high]` list. So `_apply_thresholds` and the unified callback now
+receive 7 `[low, high]` pairs (not a flat 14-element list of numbers).
+"""
 import sys
 sys.path.insert(0, '.')
 
@@ -66,50 +71,32 @@ def test_disabled_list_editable_all_false():
     assert _disabled_list(False, 14) == [False] * 14
 
 
-def test_compute_rehydrate_outputs_returns_42_values():
+def test_compute_rehydrate_outputs_returns_14_values():
+    """Compact 2-column redesign: 7 mode/status + 7 slider pairs = 14 outputs."""
     snap = _save_state_snapshot()
     try:
         _reset()
         out = _compute_rehydrate_outputs()
-        assert len(out) == 42
-    finally:
-        _restore_state_snapshot(snap)
-
-
-def test_compute_rehydrate_outputs_frozen_disabled():
-    snap = _save_state_snapshot()
-    try:
-        _reset()
-        out = _compute_rehydrate_outputs()
-        # Disabled flags occupy the last 14 positions (low + high per field)
-        assert all(out[28:42]) is True
+        assert len(out) == 14
     finally:
         _restore_state_snapshot(snap)
 
 
 def test_compute_rehydrate_outputs_uses_preset_values():
+    """All 7 slider pairs (indices 7..13) must reflect the preset values."""
     snap = _save_state_snapshot()
     try:
         _reset()
         out = _compute_rehydrate_outputs()
-        # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
-        # [14..20]=low_vals, [21..27]=high_vals
-        # sram_7nm_wl: h=[0,0.15], v=[0,1], r=[0,100], c=[0,500], tau=[0,12.5], via=[0.85,1], sim=[80,100]
-        assert out[7] == [0.0, 0.15]   # slider h
-        assert out[14] == 0.0          # low h
-        assert out[21] == 0.15         # high h
-        assert out[15] == 0.0          # low v
-        assert out[22] == 1.0          # high v
-        assert out[16] == 0.0          # low r
-        assert out[23] == 100.0        # high r
-        assert out[17] == 0.0          # low c
-        assert out[24] == 500.0        # high c
-        assert out[18] == 0.0          # low tau
-        assert out[25] == 12.5         # high tau
-        assert out[19] == 0.85         # low via
-        assert out[26] == 1.0          # high via
-        assert out[20] == 80.0         # low sim
-        assert out[27] == 100.0        # high sim
+        # sram_7nm_wl preset: h=[0,0.15], v=[0,1], r=[0,100], c=[0,500],
+        #                      tau=[0,12.5], via=[0.85,1], sim=[80,100]
+        assert out[7]  == [0.0, 0.15]
+        assert out[8]  == [0.0, 1.0]
+        assert out[9]  == [0.0, 100.0]
+        assert out[10] == [0.0, 500.0]
+        assert out[11] == [0.0, 12.5]
+        assert out[12] == [0.85, 1.0]
+        assert out[13] == [80.0, 100.0]
     finally:
         _restore_state_snapshot(snap)
 
@@ -120,7 +107,7 @@ def test_compute_rehydrate_outputs_uses_preset_values():
 #     outputs) without allow_duplicate=True. ---
 
 def test_register_callbacks_has_no_duplicate_primary_outputs():
-    """All 21 outputs in _routing_config_ui must be owned exclusively by it.
+    """All 14 outputs in _routing_config_ui must be owned exclusively by it.
 
     Other callbacks may write to these outputs only if they use
     `allow_duplicate=True`. We inspect the registered callback map after
@@ -157,10 +144,12 @@ def test_rehydrate_after_apply_shows_custom_values_and_editable():
         _reset()
         # Go editable and apply a different tau + r
         routing_state.set_frozen_mode(False)
-        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
-        custom_vals = (0.0, 0.20, 0.0, 0.95, 0.0, 77.0, 0.0, 333.0,
-                       0.0, 9.5, 0.80, 1.0, 75.0, 100.0)
-        _apply_thresholds(custom_vals)
+        # 7 [low, high] pairs for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+        custom_pairs = [
+            [0.0, 0.20], [0.0, 0.95], [0.0, 77.0], [0.0, 333.0],
+            [0.0, 9.5],  [0.80, 1.0], [75.0, 100.0],
+        ]
+        _apply_thresholds(custom_pairs)
 
         out = _compute_rehydrate_outputs()
         # Slider values are [low, high] pairs at indices 7..13
@@ -168,12 +157,6 @@ def test_rehydrate_after_apply_shows_custom_values_and_editable():
         assert abs(out[8][1] - 0.95) < 1e-9   # slider v high
         assert abs(out[9][1] - 77.0) < 1e-9   # slider r high
         assert abs(out[11][1] - 9.5) < 1e-9   # slider tau high
-        # High values: indices 21..27
-        assert abs(out[21] - 0.20) < 1e-9     # high h
-        assert abs(out[23] - 77.0) < 1e-9     # high r
-        assert abs(out[25] - 9.5) < 1e-9      # high tau
-        # Disabled flags (last 14) all False because editable after apply
-        assert all(d is False for d in out[28:42])
         # Mode buttons: editable should be the "primary" one
         assert "primary" in out[1] or "btn-primary" in out[1]
     finally:
@@ -191,10 +174,12 @@ def test_apply_thresholds_updates_state_and_clears_badges():
         routing_state.last_status = "Reviewed 3 nets"
         routing_state.set_frozen_mode(True)
 
-        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
-        good_vals = (0.0, 0.25, 0.0, 0.90, 0.0, 120.0, 0.0, 600.0,
-                     0.0, 15.0, 0.88, 1.0, 82.0, 100.0)
-        _apply_thresholds(good_vals)
+        # 7 [low, high] pairs
+        good_pairs = [
+            [0.0, 0.25], [0.0, 0.90], [0.0, 120.0], [0.0, 600.0],
+            [0.0, 15.0], [0.88, 1.0], [82.0, 100.0],
+        ]
+        _apply_thresholds(good_pairs)
 
         assert routing_state.is_frozen is False
         assert routing_state.custom_thresholds is not None
@@ -236,7 +221,7 @@ def test_rehydrate_on_valid_preset_produces_no_red_error():
 
 def test_tab_rehydrate_uses_authoritative_state_not_stale_inputs():
     """Even if 'browser' input values (simulated) differ, rehydrate must push
-    the authoritative get_thresholds() values and correct disabled/mode.
+    the authoritative get_thresholds() values and correct mode.
     """
     snap = _save_state_snapshot()
     try:
@@ -252,11 +237,8 @@ def test_tab_rehydrate_uses_authoritative_state_not_stale_inputs():
 
         # Direct rehydrate (what tab listener now calls) must ignore any other numbers
         out = _compute_rehydrate_outputs()
-        # c_ff is the 4th field (0-based 3): slider index 7+3=10, high index 21+3=24
+        # c_ff is the 4th field (0-based 3): slider index 7+3=10
         assert abs(out[10][1] - 1234.0) < 1e-9
-        assert abs(out[24] - 1234.0) < 1e-9
-        # inputs must be enabled (first disabled is at index 28)
-        assert out[28] is False
     finally:
         _restore_state_snapshot(snap)
 
@@ -279,21 +261,19 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
 
         # Switch to editable, change a value, apply (persistence path)
         routing_state.set_frozen_mode(False)
-        # 14-tuple (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
-        edited_vals = (0.0, 0.18, 0.0, 0.92, 0.0, 88.0, 0.0, 420.0,
-                       0.0, 7.7, 0.82, 1.0, 78.0, 100.0)
-        _apply_thresholds(edited_vals)
+        # 7 [low, high] pairs
+        edited_pairs = [
+            [0.0, 0.18], [0.0, 0.92], [0.0, 88.0], [0.0, 420.0],
+            [0.0, 7.7],  [0.82, 1.0], [78.0, 100.0],
+        ]
+        _apply_thresholds(edited_pairs)
 
         # Simulate tab switch to Config: call rehydrate refresh function
         out = _compute_rehydrate_outputs()
-        # After apply + rehydrate: should show custom (not preset), editable (disabled=False)
-        # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
+        # After apply + rehydrate: should show custom (not preset), editable
+        # tau_ps is the 5th field (0-based 4): slider at 7+4=11
         tau_slider_idx = 7 + 4
-        tau_high_idx = 21 + 4
         assert abs(out[tau_slider_idx][1] - 7.7) < 1e-9
-        assert abs(out[tau_high_idx] - 7.7) < 1e-9
-        # Disabled flags (last 14) all False because editable
-        assert all(d is False for d in out[28:42])
 
         # Now switch to Review tab simulation: use review refresh helpers
         from app.routing_review import _build_metric_cards, _build_threshold_source
@@ -310,8 +290,6 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
         out2 = _compute_rehydrate_outputs()
         # In frozen after, values should reflect the preset backing (not the draft custom)
         assert abs(out2[tau_slider_idx][1] - preset_tau) < 1e-9
-        # disabled should now be True
-        assert all(d is True for d in out2[28:42])
         assert routing_state.is_frozen is True
 
         # Draft is preserved (even if not shown while frozen)
@@ -324,16 +302,15 @@ def test_frozen_vs_editable_apply_persistence_via_refresh():
 
 
 def test_create_routing_config_tab_uses_range_sliders():
+    """Compact 2-column redesign: 7 sliders total, no badge-inputs."""
     from app.routing_config import create_routing_config_tab
     el = create_routing_config_tab()
     s = str(el)
-    # 7 sliders, 14 badge-inputs (low + high for each of 7 fields)
+    # 7 sliders (one per field) — no separate low/high badge inputs anymore
     assert s.count("id='slider-") == 7
-    assert s.count("id='badge-input-") == 14
-    # No thresh- inputs (legacy) — only check actual input fields (dcc.Input
-    # renders with `type='number', id='thresh-...'` in its repr). The badge
-    # Span (id='thresh-unsaved-badge') and apply-status Div are display-only
-    # and are intentionally kept (see Task 4 / design plan).
+    assert s.count("id='badge-input-") == 0, \
+        "badge-input components were removed in compact 2-column redesign"
+    # No legacy thresh- number inputs
     assert "type='number', id='thresh-" not in s
 
 
@@ -346,6 +323,17 @@ def test_create_routing_config_tab_has_section_header_for_ranges():
     assert "section-subheader" in s
     assert "\u9608\u503c\u533a\u95f4" in s  # 阈值区间
     assert "ranges-container" in s
-    # 7 sliders, 14 badge-inputs (low + high for each of 7 fields)
+    # 3 double-cell rows + 1 single-cell row = 4 range-row containers
+    assert s.count("className='range-row double'") == 3
+    assert s.count("className='range-row single'") == 1
+    # 7 metric-cell containers total (3*2 + 1) — some may carry a state class
+    # like 'metric-cell is-invalid' depending on preset default values.
+    cell_class_occurrences = (
+        s.count("className='metric-cell'")
+        + s.count("className='metric-cell is-")
+    )
+    assert cell_class_occurrences == 7, \
+        f"Expected 7 metric-cell containers; got {cell_class_occurrences}"
+    # 7 sliders total
     assert s.count("id='slider-") == 7
-    assert s.count("id='badge-input-") == 14
+    assert s.count("id='badge-input-") == 0

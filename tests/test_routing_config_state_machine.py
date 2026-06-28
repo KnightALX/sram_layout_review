@@ -3,6 +3,10 @@
 These tests are pure-Python: they directly import the 3 helpers
 (_validate_apply, _render_state, _dispatch_action) from app.routing_config.
 No Dash server required.
+
+Compact 2-column redesign: each RangeSlider exposes its `value` as a
+`[low, high]` list. So `_validate_apply` and `_render_state` now receive a
+list of 7 `[low, high]` pairs (not a flat 14-element list of numbers).
 """
 import sys
 sys.path.insert(0, '.')
@@ -52,15 +56,23 @@ def _reset_state():
     routing_state.set_frozen_mode(True)
 
 
-# 1. validate: 7 valid values -> RoutingThresholds instance, no error
+def _pairs_from_thresholds(t):
+    """Helper: build 7 [low, high] pairs from a RoutingThresholds instance."""
+    return [[getattr(t, fld["name"]).low,
+             getattr(t, fld["name"]).high] for fld in RANGE_FIELDS]
+
+
+# 1. validate: 7 valid pairs -> RoutingThresholds instance, no error
 
 def test_validate_apply_valid_values():
     snap = _save_state_snapshot()
     try:
-        # 14 values: (low, high) for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
-        vals = (0.0, 0.15, 0.0, 1.0, 0.0, 100.0, 0.0, 500.0,
-                0.0, 12.5, 0.85, 1.0, 80.0, 100.0)
-        result, err = _validate_apply(vals)
+        # 7 [low, high] pairs for h_ratio, v_ratio, r_ohm, c_ff, tau_ps, via_coverage, similarity
+        pairs = [
+            [0.0, 0.15], [0.0, 1.0], [0.0, 100.0], [0.0, 500.0],
+            [0.0, 12.5], [0.85, 1.0], [80.0, 100.0],
+        ]
+        result, err = _validate_apply(pairs)
         assert err is None
         assert result is not None
         assert result.h_ratio.high == 0.15
@@ -75,9 +87,11 @@ def test_validate_apply_h_plus_v_too_small():
     snap = _save_state_snapshot()
     try:
         # h_ratio.high=0.3, v_ratio.high=0.3 -> 0.6 < 1.0, should fail
-        vals = (0.0, 0.3, 0.0, 0.3, 0.0, 100.0, 0.0, 500.0,
-                0.0, 12.5, 0.85, 1.0, 80.0, 100.0)
-        result, err = _validate_apply(vals)
+        pairs = [
+            [0.0, 0.3], [0.0, 0.3], [0.0, 100.0], [0.0, 500.0],
+            [0.0, 12.5], [0.85, 1.0], [80.0, 100.0],
+        ]
+        result, err = _validate_apply(pairs)
         assert result is None
         assert err is not None
     finally:
@@ -90,9 +104,9 @@ def test_validate_apply_none_falls_back_to_current():
     snap = _save_state_snapshot()
     try:
         _reset_state()
-        # 14 None values fall back to current state's Range values
-        vals = (None,) * 14
-        result, err = _validate_apply(vals)
+        # 7 [None, None] pairs fall back to current state's Range values
+        pairs = [[None, None]] * 7
+        result, err = _validate_apply(pairs)
         assert err is None
         assert result is not None
         assert result.h_ratio.high == 0.15
@@ -107,43 +121,40 @@ def test_validate_apply_negative_tau_rejected():
     snap = _save_state_snapshot()
     try:
         # tau_ps.high=-1.0 -> invalid (negative)
-        vals = (0.0, 0.15, 0.0, 1.0, 0.0, 100.0, 0.0, 500.0,
-                0.0, -1.0, 0.85, 1.0, 80.0, 100.0)
-        result, err = _validate_apply(vals)
+        pairs = [
+            [0.0, 0.15], [0.0, 1.0], [0.0, 100.0], [0.0, 500.0],
+            [0.0, -1.0], [0.85, 1.0], [80.0, 100.0],
+        ]
+        result, err = _validate_apply(pairs)
         assert result is None
         assert err is not None
     finally:
         _restore_state_snapshot(snap)
 
 
-# 5. render: frozen + preset -> 42 outputs, all disabled
+# 5. render: frozen + preset -> 14 outputs, mode buttons reflect frozen
 
 def test_render_state_frozen_preset_disabled():
+    """Compact redesign: 14-element tuple; frozen mode sets `btn-primary` on frozen btn."""
     snap = _save_state_snapshot()
     try:
         _reset_state()
-        # Pass 14 values (matching RANGE_FIELDS, low + high for each)
-        inputs = []
-        for fld in RANGE_FIELDS:
-            rng = getattr(routing_state.thresholds, fld["name"])
-            inputs.extend([rng.low, rng.high])
-        out = _render_state(inputs)
-        assert len(out) == 42
-        # Disabled flags occupy indices 28:42
-        assert all(out[28:42]) is True
+        # Pass 7 [low, high] pairs (matching RANGE_FIELDS)
+        pairs = _pairs_from_thresholds(routing_state.thresholds)
+        out = _render_state(pairs)
+        assert len(out) == 14
+        # Mode buttons: frozen is primary, editable is secondary
+        assert "btn-primary" in out[0]
+        assert "btn-secondary" in out[1]
         # Slider values are [low, high] pairs at 7..13
         assert out[7] == [0.0, 0.15]
         assert out[8] == [0.0, 1.0]
         assert out[11] == [0.0, 12.5]
-        # High values at 21..27
-        assert out[21] == 0.15
-        assert out[22] == 1.0
-        assert out[25] == 12.5
     finally:
         _restore_state_snapshot(snap)
 
 
-# 6. render: editable + custom -> not disabled, custom values shown
+# 6. render: editable + custom -> custom values shown in slider pairs
 
 def test_render_state_editable_custom_enabled():
     snap = _save_state_snapshot()
@@ -156,16 +167,12 @@ def test_render_state_editable_custom_enabled():
         # Mutate tau_ps.high
         old_tau = routing_state.custom_thresholds.tau_ps
         routing_state.custom_thresholds.tau_ps = Range(old_tau.low, 25.0)
-        inputs = []
-        for fld in RANGE_FIELDS:
-            rng = getattr(routing_state.custom_thresholds, fld["name"])
-            inputs.extend([rng.low, rng.high])
-        out = _render_state(inputs)
-        # Disabled flags at 28:42 all False because editable
-        assert all(d is False for d in out[28:42])
-        # tau_ps is the 5th field (0-based 4): slider at 11, high at 25
+        pairs = _pairs_from_thresholds(routing_state.custom_thresholds)
+        out = _render_state(pairs)
+        # tau_ps is the 5th field (0-based 4): slider at 11
         assert out[11] == [0.0, 25.0]
-        assert out[25] == 25.0
+        # Mode buttons: editable is primary now
+        assert "btn-primary" in out[1]
     finally:
         _restore_state_snapshot(snap)
 
@@ -181,14 +188,10 @@ def test_render_state_unsaved_badge_when_input_differs():
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.get_thresholds().to_dict()
             )
-        # Build 14 input values, then change the first (h_ratio.high) to 0.5
-        inputs = []
-        for fld in RANGE_FIELDS:
-            rng = getattr(routing_state.custom_thresholds, fld["name"])
-            inputs.extend([rng.low, rng.high])
-        # h_ratio.high is at index 1
-        inputs[1] = 0.5
-        out = _render_state(inputs)
+        # Build 7 input pairs from custom, then change the first (h_ratio.high) to 0.5
+        pairs = _pairs_from_thresholds(routing_state.custom_thresholds)
+        pairs[0] = [0.0, 0.5]  # h_ratio: [low, high] = [0.0, 0.5]
+        out = _render_state(pairs)
         badge = out[4]
         assert badge is not None
         status = out[5]
@@ -208,11 +211,8 @@ def test_render_state_no_unsaved_when_matches():
             routing_state.custom_thresholds = RoutingThresholds.from_dict(
                 routing_state.get_thresholds().to_dict()
             )
-        inputs = []
-        for fld in RANGE_FIELDS:
-            rng = getattr(routing_state.custom_thresholds, fld["name"])
-            inputs.extend([rng.low, rng.high])
-        out = _render_state(inputs)
+        pairs = _pairs_from_thresholds(routing_state.custom_thresholds)
+        out = _render_state(pairs)
         badge = out[4]
         assert badge is not None
         style = badge.style if hasattr(badge, "style") else {}
@@ -301,10 +301,12 @@ def test_dispatch_apply_valid():
     snap = _save_state_snapshot()
     try:
         _reset_state()
-        # 14 values; h_ratio.high=0.5, v_ratio.high=0.7
-        vals = (0.0, 0.5, 0.0, 0.7, 0.0, 100.0, 0.0, 500.0,
-                0.0, 12.5, 0.85, 1.0, 80.0, 100.0)
-        _dispatch_action("btn-apply-thresholds.n_clicks", None, vals)
+        # 7 [low, high] pairs; h_ratio.high=0.5, v_ratio.high=0.7
+        pairs = [
+            [0.0, 0.5], [0.0, 0.7], [0.0, 100.0], [0.0, 500.0],
+            [0.0, 12.5], [0.85, 1.0], [80.0, 100.0],
+        ]
+        _dispatch_action("btn-apply-thresholds.n_clicks", None, pairs)
         assert routing_state.custom_thresholds is not None
         assert routing_state.custom_thresholds.h_ratio.high == 0.5
         assert routing_state.is_frozen is False
@@ -321,9 +323,11 @@ def test_dispatch_apply_invalid_keeps_state():
         original_thr = routing_state.thresholds
         original_custom = routing_state.custom_thresholds
         # h_ratio.high=0.3, v_ratio.high=0.3 -> sum 0.6 < 1.0, invalid
-        vals = (0.0, 0.3, 0.0, 0.3, 0.0, 100.0, 0.0, 500.0,
-                0.0, 12.5, 0.85, 1.0, 80.0, 100.0)
-        _dispatch_action("btn-apply-thresholds.n_clicks", None, vals)
+        pairs = [
+            [0.0, 0.3], [0.0, 0.3], [0.0, 100.0], [0.0, 500.0],
+            [0.0, 12.5], [0.85, 1.0], [80.0, 100.0],
+        ]
+        _dispatch_action("btn-apply-thresholds.n_clicks", None, pairs)
         assert routing_state.thresholds is original_thr
         assert routing_state.custom_thresholds is original_custom
         assert routing_state.last_error is not None

@@ -7,17 +7,22 @@ display identical numbers for the same net.
 Units contract (UI consumers may rely on these):
   - r_total_ohm     : ohms
   - c_total_ff      : femtofarads
-  - tau_elmore_ps   : picoseconds (Elmore delay)
-  - tau_naive_ps    : picoseconds (R*C, no Elmore)
+  - tau_elmore_ps   : picoseconds (Elmore delay, 0.5 * R * C)
+  - tau_naive_ps    : picoseconds (R*C without Elmore, full lumped value)
   - h_ratio, v_ratio: 0..1
   - via_coverage    : 0..1
   - similarity_score: 0..100
   - missing_via_count: int
+
+Relationship: tau_naive_ps ≈ 2 × tau_elmore_ps (Elmore halves the lumped
+factor for a single RC chain). Both fields are in ps so they can be
+displayed side-by-side at the same order of magnitude.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from core.effective_tau import OHM_FF_TO_PS
 from core.routing_metrics import compute_for_net
 
 
@@ -61,10 +66,12 @@ def summarize_net(
         "r_total_ohm": r_total,
         "c_total_ff": c_total,
         "tau_elmore_ps": tau_elmore,
-        # tau_naive = R*C without Elmore correction. Strictly SI: R(Ω)*C(fF)
-        # gives femtoseconds; the field name keeps "_ps" for consistency with
-        # the legacy convention used by the existing tests / UI consumers.
-        "tau_naive_ps": r_total * c_total,
+        # tau_naive = R*C without Elmore correction. Convert Ω·fF numeric
+        # product to picoseconds via OHM_FF_TO_PS so the field name and the
+        # actual unit agree (was historically left as fs by mistake).
+        # Physically: tau_naive ≈ 2 × tau_elmore_ps (Elmore halves the lumped
+        # factor for single-chain wires), so both stay in the same magnitude.
+        "tau_naive_ps": r_total * c_total * OHM_FF_TO_PS,
         "h_ratio": float(m.get("h_ratio", 0.0)),
         "v_ratio": float(m.get("v_ratio", 0.0)),
         "missing_via_count": int(m.get("missing_via_count", 0)),

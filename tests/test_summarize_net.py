@@ -2,6 +2,8 @@
 import sys
 sys.path.insert(0, '.')
 
+import pytest
+
 from core.rc_summary import summarize_net
 from review_engine import Point, Polygon
 from config.routing_thresholds import RoutingThresholds
@@ -53,7 +55,14 @@ def test_summarize_empty_polys_no_data():
 
 
 def test_summarize_units_ohm_ff_ps():
-    """R in ohm, C in fF, tau in ps - sanity check on a 10um met1 wire."""
+    """R in ohm, C in fF, tau in ps - sanity check on a 10um met1 wire.
+
+    The Routing Review path uses the lumped τ method (factor 1.0), so
+    `tau_elmore_ps` (legacy field name; effectively lumped) is numerically
+    equal to `tau_naive_ps` (= R × C × 1e-3). The two fields exist so the
+    UI can show the same number under both legacy "tau_rc"/"tau_naive"
+    column names without order-of-magnitude mismatch.
+    """
     polys = [Polygon(points=[Point(0, 0), Point(10, 0), Point(10, 0.5), Point(0, 0.5)],
                      layer="met1")]
     out = summarize_net("N1", polys, [], _tech(),
@@ -66,5 +75,14 @@ def test_summarize_units_ohm_ff_ps():
     #   = 2.0 + 0.1*2*(10+0.5) = 2.0 + 2.1 = 4.1 fF
     # (WireSegment.capacitance includes both area and fringe terms)
     assert 3.5 < out["c_total_ff"] < 4.5
-    # tau naive = R*C = 3.0 * 4.1 = 12.3 (numeric, see rc_summary.py for unit note)
-    assert 10.0 < out["tau_naive_ps"] < 14.0
+    # tau_naive_ps = R(Ω) × C(fF) × 1e-3 (Ω·fF→ps conversion).
+    # 3.0 Ω × 4.1 fF = 12.3 fs → 0.0123 ps.
+    assert 0.010 < out["tau_naive_ps"] < 0.014
+    # tau_elmore_ps uses the same Ω·fF→ps conversion under the default
+    # "lumped" method (factor = 1.0, see core/effective_tau.py), so it
+    # equals tau_naive_ps within numerical tolerance.
+    assert out["tau_elmore_ps"] == pytest.approx(out["tau_naive_ps"], rel=1e-9)
+    # And both tau values must equal R × C × 1e-3 directly, proving the
+    # order-of-magnitude fix (was historically left in fs by mistake).
+    expected_ps = out["r_total_ohm"] * out["c_total_ff"] * 1e-3
+    assert out["tau_naive_ps"] == pytest.approx(expected_ps, rel=1e-9)

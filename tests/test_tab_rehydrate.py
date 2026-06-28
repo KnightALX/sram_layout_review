@@ -54,17 +54,15 @@ def test_rehydrate_outputs_after_state_change():
         # "Tab switch back" = calling rehydrate directly (callback body is the same)
         out = _compute_rehydrate_outputs()
 
-        # Layout: [0..6]=controls, [7..13]=slider pairs (low,high),
-        # [14..20]=low_vals, [21..27]=high_vals, [28..41]=disabled flags
-        # tau_ps is the 5th field (0-based 4): slider at 7+4=11, high at 21+4=25
+        # Compact 2-column redesign: 14-element tuple
+        # Layout: [0..6]=mode/status controls, [7..13]=7 slider pairs (low,high)
+        # tau_ps is the 5th field (0-based 4): slider at 7+4=11
         tau_slider_idx = 7 + 4
-        tau_high_idx = 21 + 4
         assert abs(out[tau_slider_idx][1] - 88.0) < 1e-9, (
             f"expected 88.0, got {out[tau_slider_idx]} - rehydrate did not surface custom value"
         )
-        assert abs(out[tau_high_idx] - 88.0) < 1e-9
-        # Editable -> inputs enabled (disabled flags at 28..41)
-        assert out[28] is False
+        # Mode buttons reflect editable (not frozen) after apply
+        assert "btn-primary" in out[1]
     finally:
         _restore_state_snapshot(snap)
 
@@ -91,14 +89,12 @@ def test_rehydrate_outputs_frozen_shows_preset_even_with_custom_draft():
         global_routing_state.set_frozen_mode(True)
 
         out = _compute_rehydrate_outputs()
-        # tau_ps is the 5th field (0-based 4): slider at 11, high at 25
+        # tau_ps is the 5th field (0-based 4): slider at 11
         tau_slider_idx = 7 + 4
-        tau_high_idx = 21 + 4
         preset_tau = RoutingThresholds.for_preset("sram_7nm_wl").tau_ps.high
         assert abs(out[tau_slider_idx][1] - preset_tau) < 1e-9
-        assert abs(out[tau_high_idx] - preset_tau) < 1e-9
-        # Frozen -> inputs disabled (disabled flags at 28..41)
-        assert out[28] is True
+        # Frozen -> mode buttons: frozen btn is primary
+        assert "btn-primary" in out[0]
         # The draft is preserved in state
         assert global_routing_state.custom_thresholds.tau_ps.high == 88.0
     finally:

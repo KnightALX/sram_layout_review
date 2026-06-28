@@ -1708,58 +1708,71 @@ body {
 
 
 /* ============================================================
-   Range Slider Row (Routing Config Tab)
-   Accent Strip visual style · dark / light mode aware
+   Range Slider (Routing Config Tab) — Compact 2-Column Redesign
+   Slider is the only input control. Values shown via tooltip.
+   Each row holds 1 or 2 metric cells sharing one outer border.
    ============================================================ */
 
-/* Slider row container — card with left accent border + subtle gradient */
-.slider-row {
-    background: linear-gradient(90deg,
-        rgba(59, 130, 246, 0.10) 0%,
-        rgba(6, 182, 212, 0.02) 100%);
+/* Outer row container — shared border, grid of 1 or 2 cells */
+.range-row {
+    background: var(--bg-secondary);
     border: 1px solid var(--border-primary);
-    border-left: 3px solid var(--accent-primary);
     border-radius: var(--radius-md);
-    padding: var(--space-md);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
     margin-bottom: var(--space-md);
-    transition: border-left-color 0.2s ease, box-shadow 0.2s ease;
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.18);
 }
-.slider-row:hover { border-left-color: var(--accent-secondary); }
-.slider-row:last-child { margin-bottom: 0; }
-.slider-row.is-invalid { border-left-color: var(--status-fail); }
-.slider-row.is-warning { border-left-color: var(--status-warning); }
+.range-row:hover { border-color: var(--accent-primary); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 3px 10px rgba(59, 130, 246, 0.18); }
+.range-row:last-child { margin-bottom: 0; }
+.range-row.single { display: block; }
+.range-row.double { display: grid; grid-template-columns: 1fr 1fr; }
 
-/* Row header: name + help + bounds info */
-.slider-row .row-header {
+/* Single metric cell */
+.metric-cell {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: background-color 0.15s ease;
+    position: relative;
+}
+.metric-cell + .metric-cell {
+    border-left: 1px solid var(--border-secondary);
+}
+
+/* Metric header (name + help + bounds) */
+.metric-header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    margin-bottom: var(--space-sm);
+    gap: var(--space-sm);
 }
-.slider-row .row-header .name {
+.metric-name {
     font-size: 12px;
     font-weight: 600;
     color: var(--text-primary);
+    letter-spacing: 0.01em;
 }
-.slider-row .row-header .help {
-    font-weight: 400;
+.metric-help {
+    font-size: 10px;
     color: var(--text-muted);
-    font-size: 11px;
-    margin-left: var(--space-sm);
+    font-weight: 400;
+    margin-left: 4px;
 }
-.slider-row .row-header .bounds {
+.metric-bounds {
     font-family: var(--font-data);
     font-size: 10px;
     color: var(--text-muted);
+    white-space: nowrap;
 }
-.slider-row .row-header .bounds b {
+.metric-bounds b {
     color: var(--accent-secondary);
     font-weight: 500;
 }
 
-/* Custom tick row (3 spans) */
-.slider-row .tick-row {
+/* Compact tick row (min, mid, max) */
+.metric-cell .tick-row {
     position: relative;
     height: 12px;
     font-family: var(--font-data);
@@ -1767,85 +1780,49 @@ body {
     color: var(--text-muted);
     margin-top: 2px;
 }
-.slider-row .tick-row span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
-.slider-row .tick-row span:first-child { left: 0; transform: none; }
-.slider-row .tick-row span:last-child  { right: 0; left: auto; transform: none; }
-.slider-row .tick-row span.mid         { left: 50%; }
+.metric-cell .tick-row span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.metric-cell .tick-row span:first-child { left: 0; transform: none; }
+.metric-cell .tick-row span:last-child  { right: 0; left: auto; transform: none; }
+.metric-cell .tick-row span.mid         { left: 50%; }
 
-/* Badges container */
-.slider-row .badges { display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }
-
-/* Single badge — key + transparent dcc.Input overlay */
-.range-slider-badge {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-sm) var(--space-md);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-md);
-    font-family: var(--font-data);
-    font-size: 12px;
-    cursor: text;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.range-slider-badge:hover {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
-}
-.range-slider-badge .key {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--accent-secondary);
-    font-weight: 600;
-}
-.range-slider-badge .value-area {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 2px;
-}
-.range-slider-badge .unit {
-    color: var(--text-muted);
-    font-size: 10px;
-    margin-left: 2px;
-}
-
-/* Badge states: invalid / warning */
-.slider-row.is-invalid .range-slider-badge {
-    border-color: var(--status-fail);
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.12);
-}
-.slider-row.is-invalid .range-slider-badge .key { color: var(--status-fail); }
-.slider-row.is-warning .range-slider-badge {
-    border-color: var(--status-warning);
-}
-.slider-row.is-warning .range-slider-badge .key { color: var(--status-warning); }
-
-/* Logic row */
-.slider-row .logic {
-    margin-top: var(--space-sm);
+/* Compact logic row (low ≤ X ≤ high ⟷ w=width) */
+.metric-cell .logic-compact {
     font-family: var(--font-data);
     font-size: 10px;
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    gap: var(--space-xs);
+    gap: 4px;
     flex-wrap: wrap;
 }
-.slider-row .logic .ic { color: var(--accent-secondary); font-weight: 500; }
-.slider-row .logic code {
+.metric-cell .logic-compact code {
     background: var(--bg-tertiary);
     color: var(--accent-secondary);
     padding: 1px 6px;
-    border-radius: var(--radius-sm);
+    border-radius: 3px;
     font-family: var(--font-data);
+    font-size: 10px;
 }
-.slider-row .logic.is-invalid { color: var(--status-fail); }
-.slider-row .logic.is-invalid code { background: rgba(239, 68, 68, 0.12); color: var(--status-fail); }
-.slider-row .logic.is-warning { color: var(--status-warning); }
-.slider-row .logic.is-warning code { background: rgba(245, 158, 11, 0.12); color: var(--status-warning); }
+.metric-cell .logic-compact .ic {
+    color: var(--accent-secondary);
+    font-weight: 500;
+}
+
+/* Constraint violation / warning states on a cell */
+.metric-cell.is-invalid {
+    background: rgba(239, 68, 68, 0.06);
+}
+.metric-cell.is-warning {
+    background: rgba(245, 158, 11, 0.06);
+}
+.metric-cell.is-invalid .metric-name { color: var(--status-fail); }
+.metric-cell.is-warning .metric-name { color: var(--status-warning); }
+.metric-cell.is-invalid .logic-compact,
+.metric-cell.is-invalid .logic-compact code { color: var(--status-fail); background: rgba(239, 68, 68, 0.12); }
+.metric-cell.is-warning .logic-compact,
+.metric-cell.is-warning .logic-compact code { color: var(--status-warning); background: rgba(245, 158, 11, 0.12); }
+.metric-cell.is-invalid .logic-compact .ic { color: var(--status-fail); }
+.metric-cell.is-warning .logic-compact .ic { color: var(--status-warning); }
 
 /* Config section wrapper */
 .config-section { margin-bottom: var(--space-xl); }
@@ -1865,22 +1842,22 @@ body {
 }
 .ranges-container { display: flex; flex-direction: column; gap: 0; }
 
-/* Light mode adjustments */
-.theme-light .slider-row {
-    background: linear-gradient(90deg,
-        rgba(37, 99, 235, 0.07) 0%,
-        rgba(8, 145, 178, 0.015) 100%);
-    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15), 0 1px 2px rgba(15, 23, 42, 0.06);
+/* Light mode adjustments for compact 2-col layout */
+.theme-light .range-row {
+    background: var(--bg-secondary);
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.10), 0 1px 2px rgba(15, 23, 42, 0.06);
 }
-.theme-light .range-slider-badge:hover { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18); }
-.theme-light .slider-row.is-invalid .range-slider-badge { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18); }
+.theme-light .range-row:hover { box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.20), 0 3px 10px rgba(37, 99, 235, 0.15); }
+.theme-light .metric-cell + .metric-cell { border-left-color: var(--border-secondary); }
+.theme-light .metric-cell.is-invalid { background: rgba(239, 68, 68, 0.07); }
+.theme-light .metric-cell.is-warning { background: rgba(245, 158, 11, 0.07); }
 
 
 /* ============================================================
    Dash RangeSlider internal class overrides
    Apply Accent Strip visual treatment to the rc-slider-* DOM
    ============================================================ */
-.range-slider { margin: 6px 0 !important; }
+.range-slider { margin: 6px 0 !important; padding: 6px 0 !important; }
 
 .rc-slider-rail {
     background: var(--bg-elevated) !important;
@@ -1923,6 +1900,24 @@ body {
     box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.20) !important;
 }
 
+/* Invalid / warning cell propagates to track + handle */
+.metric-cell.is-invalid .rc-slider-track {
+    background: linear-gradient(90deg, var(--status-fail), var(--status-warning)) !important;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.30) !important;
+}
+.metric-cell.is-invalid .rc-slider-handle {
+    border-color: var(--status-fail) !important;
+}
+.metric-cell.is-invalid .rc-slider-handle::after {
+    background: var(--status-fail) !important;
+}
+.metric-cell.is-warning .rc-slider-handle {
+    border-color: var(--status-warning) !important;
+}
+.metric-cell.is-warning .rc-slider-handle::after {
+    background: var(--status-warning) !important;
+}
+
 .theme-light .rc-slider-handle { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.20) !important; }
 .theme-light .rc-slider-handle:hover,
 .theme-light .rc-slider-handle:focus { box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.22) !important; }
@@ -1940,33 +1935,3 @@ body {
     font-size: 11px !important;
 }
 .rc-slider-tooltip-inner { box-shadow: none !important; }
-
-/* Number input native chrome stripped — modern browsers */
-.badge-input-overlay {
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    font-family: var(--font-data);
-    font-size: 12px;
-    text-align: right;
-    width: 64px;
-    padding: 0;
-    margin: 0;
-    outline: none;
-    -moz-appearance: textfield;
-}
-.badge-input-overlay::-webkit-outer-spin-button,
-.badge-input-overlay::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-.range-slider-badge:focus-within {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.20);
-    background: var(--bg-tertiary);
-}
-.badge-input-overlay:focus {
-    color: var(--accent-primary);
-    font-weight: 600;
-}
-.theme-light .range-slider-badge:focus-within { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22); }

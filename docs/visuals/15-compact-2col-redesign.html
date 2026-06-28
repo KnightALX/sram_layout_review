@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Routing Config — Compact 2-Column Slider Redesign</title>
+<style>
+:root {
+    --bg-primary: #1a1f2e;
+    --bg-secondary: #232838;
+    --bg-tertiary: #2a3041;
+    --bg-elevated: #3a4258;
+    --border-primary: #3a4258;
+    --border-secondary: #2a3041;
+    --text-primary: #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent-primary: #3b82f6;
+    --accent-secondary: #06b6d4;
+    --status-fail: #ef4444;
+    --status-warning: #f59e0b;
+    --status-success: #10b981;
+    --radius-md: 8px;
+    --radius-sm: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --font-data: 'SF Mono', 'JetBrains Mono', monospace;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+.page {
+    max-width: 920px;
+    margin: 0 auto;
+}
+.page-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    margin: 0 0 4px 0;
+}
+.page-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+}
+.config-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-primary);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-tertiary);
+}
+.card-body { padding: 16px; }
+.section-header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.section-subheader {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    font-style: italic;
+}
+.ranges-container { display: flex; flex-direction: column; gap: 0; }
+
+/* === NEW: Compact 2-Column Range Row === */
+.range-row {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-md);
+    overflow: hidden;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.range-row:hover {
+    border-color: var(--accent-primary);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25), 0 3px 10px rgba(59, 130, 246, 0.18);
+}
+.range-row:last-child { margin-bottom: 0; }
+.range-row.single { display: block; }
+.range-row.double {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.metric-cell {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: background-color 0.15s ease;
+    position: relative;
+}
+.metric-cell + .metric-cell { border-left: 1px solid var(--border-secondary); }
+
+.metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+.metric-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+}
+.metric-help {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 4px;
+}
+.metric-bounds {
+    font-family: var(--font-data);
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.metric-bounds b {
+    color: var(--accent-secondary);
+    font-weight: 500;
+}
+
+.tick-row {
+    position: relative;
+    height: 12px;
+    font-family: var(--font-data);
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.tick-row span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tick-row span:first-child { left: 0; transform: none; }
+.tick-row span:last-child  { right: 0; left: auto; transform: none; }
+.tick-row span.mid         { left: 50%; }
+
+.logic-compact {
+    font-family: var(--font-data);
+    font-size: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+.logic-compact code {
+    background: var(--bg-tertiary);
+    color: var(--accent-secondary);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: var(--font-data);
+    font-size: 10px;
+}
+
+/* RangeSlider visuals (simulated) */
+.range-slider {
+    margin: 6px 0;
+    padding: 6px 0;
+    position: relative;
+    height: 24px;
+}
+.range-slider .rail {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-secondary);
+    border-radius: 3px;
+    transform: translateY(-50%);
+}
+.range-slider .track {
+    position: absolute;
+    top: 50%;
+    height: 6px;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: 3px;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+    transform: translateY(-50%);
+}
+.range-slider .handle {
+    position: absolute;
+    top: 50%;
+    width: 18px;
+    height: 18px;
+    background: var(--bg-secondary);
+    border: 2px solid var(--accent-primary);
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.range-slider .handle::after {
+    content: '';
+    width: 4px;
+    height: 4px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+}
+.range-slider .tooltip {
+    position: absolute;
+    top: -28px;
+    transform: translateX(-50%);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: var(--font-data);
+    font-size: 11px;
+    white-space: nowrap;
+}
+.range-slider .tooltip::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 6px;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-right: 1px solid var(--border-primary);
+    border-bottom: 1px solid var(--border-primary);
+}
+
+/* States */
+.metric-cell.is-invalid {
+    background: rgba(239, 68, 68, 0.06);
+}
+.metric-cell.is-warning {
+    background: rgba(245, 158, 11, 0.06);
+}
+.metric-cell.is-invalid .logic-compact code { color: var(--status-fail); background: rgba(239, 68, 68, 0.12); }
+.metric-cell.is-warning .logic-compact code { color: var(--status-warning); background: rgba(245, 158, 11, 0.12); }
+
+.compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 32px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    font-size: 11px;
+}
+.compare-table th, .compare-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-primary);
+}
+.compare-table th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+    color: var(--accent-secondary);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.compare-table td { color: var(--text-secondary); }
+.compare-table tr:last-child td { border-bottom: none; }
+.compare-table .label {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.legend {
+    margin-top: 24px;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.legend h3 {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    color: var(--accent-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+.legend ul { margin: 0; padding-left: 18px; }
+.legend li { margin-bottom: 6px; line-height: 1.5; }
+.legend strong { color: var(--accent-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+    <h1 class="page-title">Routing Config — 紧凑双列滑块重构</h1>
+    <p class="page-subtitle">Dash 原生 · 离线运行 · RangeSlider always_visible tooltip 取代独立 Low/High 输入框</p>
+
+    <div class="config-card">
+        <div class="card-header">
+            Routing Thresholds
+        </div>
+        <div class="card-body">
+            <div class="section-header">阈值区间 (Closed Interval)</div>
+            <div class="section-subheader">拖拽手柄调整 · 两个指标一行显示 · 值在 slider 右侧 tooltip</div>
+
+            <div class="ranges-container">
+
+                <!-- Row 1: h_ratio | v_ratio -->
+                <div class="range-row double">
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Horizontal Ratio</span>
+                                <span class="metric-help"> — 横向走线占比</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0.00, 1.00]</b></span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:0%; width:15%"></div>
+                            <div class="handle" style="left:0%">
+                                <div class="tooltip" style="left:0">0.00</div>
+                            </div>
+                            <div class="handle" style="left:15%">
+                                <div class="tooltip" style="left:0">0.15</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0.00</span>
+                            <span class="mid">0.50</span>
+                            <span>1.00</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>0.00 ≤ X ≤ 0.15</code>
+                            <span> ⟺ </span>
+                            <code>0.15</code>
+                        </div>
+                    </div>
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Vertical Ratio</span>
+                                <span class="metric-help"> — 纵向走线占比</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0.00, 1.00]</b></span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:0%; width:100%"></div>
+                            <div class="handle" style="left:0%">
+                                <div class="tooltip" style="left:0">0.00</div>
+                            </div>
+                            <div class="handle" style="left:100%">
+                                <div class="tooltip" style="left:-100%">1.00</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0.00</span>
+                            <span class="mid">0.50</span>
+                            <span>1.00</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>0.00 ≤ X ≤ 1.00</code>
+                            <span> ⟺ </span>
+                            <code>1.00</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 2: r_ohm | c_ff -->
+                <div class="range-row double">
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Resistance</span>
+                                <span class="metric-help"> — 走线电阻上限</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0, 100]</b> Ω</span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:0%; width:100%"></div>
+                            <div class="handle" style="left:0%">
+                                <div class="tooltip" style="left:0">0</div>
+                            </div>
+                            <div class="handle" style="left:100%">
+                                <div class="tooltip" style="left:-100%">100</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0</span>
+                            <span class="mid">50</span>
+                            <span>100</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>0 ≤ X ≤ 100</code>
+                            <span> ⟺ </span>
+                            <code>100</code>
+                        </div>
+                    </div>
+                    <div class="metric-cell is-warning">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name" style="color:var(--status-warning)">Capacitance</span>
+                                <span class="metric-help"> — 走线电容上限</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0, 500]</b> fF</span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:99.9%; width:0.1%; background:linear-gradient(90deg,var(--status-warning),var(--status-warning)); box-shadow:0 0 8px rgba(245,158,11,0.4)"></div>
+                            <div class="handle" style="left:99.9%; border-color:var(--status-warning)">
+                                <div class="tooltip" style="left:-100%; background:rgba(245,158,11,0.15); border-color:var(--status-warning); color:var(--status-warning)">499.5</div>
+                            </div>
+                            <div class="handle" style="left:100%; border-color:var(--status-warning)">
+                                <div class="tooltip" style="left:-100%; background:rgba(245,158,11,0.15); border-color:var(--status-warning); color:var(--status-warning)">500.0</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0</span>
+                            <span class="mid">250</span>
+                            <span>500</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span style="color:var(--status-warning)">⚠ 区间过窄 (</span>
+                            <code>0.5</code>
+                            <span style="color:var(--status-warning)">)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 3: tau_ps | via_coverage -->
+                <div class="range-row double">
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Tau (RC)</span>
+                                <span class="metric-help"> — 时间常数</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0, 12.5]</b> ps</span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:0%; width:100%"></div>
+                            <div class="handle" style="left:0%">
+                                <div class="tooltip" style="left:0">0.0</div>
+                            </div>
+                            <div class="handle" style="left:100%">
+                                <div class="tooltip" style="left:-100%">12.5</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0.0</span>
+                            <span class="mid">6.3</span>
+                            <span>12.5</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>0.0 ≤ X ≤ 12.5</code>
+                            <span> ⟺ </span>
+                            <code>12.5</code>
+                        </div>
+                    </div>
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Via Coverage</span>
+                                <span class="metric-help"> — Via 覆盖率</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[0.85, 1.00]</b></span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:85%; width:15%"></div>
+                            <div class="handle" style="left:85%">
+                                <div class="tooltip" style="left:0">0.85</div>
+                            </div>
+                            <div class="handle" style="left:100%">
+                                <div class="tooltip" style="left:-100%">1.00</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>0.85</span>
+                            <span class="mid">0.93</span>
+                            <span>1.00</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>0.85 ≤ X ≤ 1.00</code>
+                            <span> ⟺ </span>
+                            <code>0.15</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 4: similarity (single) -->
+                <div class="range-row single">
+                    <div class="metric-cell">
+                        <div class="metric-header">
+                            <span>
+                                <span class="metric-name">Similarity</span>
+                                <span class="metric-help"> — 走线相似度</span>
+                            </span>
+                            <span class="metric-bounds">bounds <b>[80, 100]</b> %</span>
+                        </div>
+                        <div class="range-slider">
+                            <div class="rail"></div>
+                            <div class="track" style="left:80%; width:20%"></div>
+                            <div class="handle" style="left:80%">
+                                <div class="tooltip" style="left:0">80</div>
+                            </div>
+                            <div class="handle" style="left:100%">
+                                <div class="tooltip" style="left:-100%">100</div>
+                            </div>
+                        </div>
+                        <div class="tick-row">
+                            <span>80</span>
+                            <span class="mid">90</span>
+                            <span>100</span>
+                        </div>
+                        <div class="logic-compact">
+                            <span>合规 </span>
+                            <code>80 ≤ X ≤ 100</code>
+                            <span> ⟺ </span>
+                            <code>20</code>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Comparison Table -->
+    <table class="compare-table">
+        <thead>
+            <tr>
+                <th>维度</th>
+                <th>旧版（独立 Low/High 输入）</th>
+                <th>新版（合并 tooltip）</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="label">每行布局</td>
+                <td>1 个指标 / 行（独立卡片）</td>
+                <td><strong>2 个指标 / 行</strong>（1 行 = 1 共享边框）</td>
+            </tr>
+            <tr>
+                <td class="label">数值输入</td>
+                <td>3 个独立控件：滑块 + Low 输入 + High 输入</td>
+                <td><strong>1 个控件</strong>：滑块（always_visible tooltip 显示 Low/High）</td>
+            </tr>
+            <tr>
+                <td class="label">dcc 组件数量</td>
+                <td>21 个（7 slider + 14 input）</td>
+                <td><strong>7 个</strong>（仅 7 slider）</td>
+            </tr>
+            <tr>
+                <td class="label">回调 Outputs</td>
+                <td>41 个（slider + input value + input disabled）</td>
+                <td><strong>14 个</strong>（slider value + 状态）</td>
+            </tr>
+            <tr>
+                <td class="label">同步回调</td>
+                <td>slider↔badge 双向 sync（28 个回调）</td>
+                <td><strong>0 个</strong>（Dash tooltip 自动同步）</td>
+            </tr>
+            <tr>
+                <td class="label">行高 / 视觉密度</td>
+                <td>每指标 ~140px（卡片高度）</td>
+                <td><strong>~95px</strong>（指标 cell + 共享边框）</td>
+            </tr>
+            <tr>
+                <td class="label">依赖</td>
+                <td>dash + dash-bootstrap-components</td>
+                <td><strong>仅 dash</strong>（无 Bootstrap）</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="legend">
+        <h3>设计要点</h3>
+        <ul>
+            <li><strong>合并输入</strong>：Dash RangeSlider 自带 <code>tooltip={"placement": "bottom", "always_visible": True}</code>，直接在 bar 下方显示当前 Low/High 值。Low/High 文本输入框被彻底移除。</li>
+            <li><strong>双列布局</strong>：CSS Grid <code>display: grid; grid-template-columns: 1fr 1fr;</code>，两个指标 cell 共享一个外层 <code>.range-row.double</code> 边框。Similarity 单列场景使用 <code>.range-row.single</code>。</li>
+            <li><strong>状态视觉</strong>：<code>.metric-cell.is-invalid</code> / <code>.is-warning</code> 状态会传播到 cell 背景、handle 边框、track 渐变和 logic-compact 文本颜色。</li>
+            <li><strong>主题一致</strong>：全部使用项目 <code>eda-theme.css</code> 中的 CSS 变量（<code>--accent-primary</code>、<code>--bg-secondary</code> 等），支持深色 / 浅色主题切换。</li>
+            <li><strong>离线运行</strong>：仅依赖 <code>dash</code> 库，无网络资源、无 Bootstrap、无第三方字体。</li>
+        </ul>
+    </div>
+</div>
+</body>
+</html>
